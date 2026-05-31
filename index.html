@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Nutrition Plan</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0f1e; color: #f1f5f9; font-family: 'Segoe UI', system-ui, sans-serif; }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0f1e; }
+    ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
+    @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+    /* Export/Import toolbar */
+    #sync-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
+      background: #060d1a; border-top: 1px solid #1e3a5f;
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; padding: 8px 16px; flex-wrap: wrap;
+    }
+    #sync-bar span { font-size: 11px; color: #64748b; }
+    .sync-btn {
+      font-size: 11px; font-weight: 700; padding: 5px 12px;
+      border-radius: 6px; border: none; cursor: pointer;
+    }
+    .sync-btn-export { background: #3b82f618; border: 1px solid #3b82f655; color: #3b82f6; }
+    .sync-btn-import { background: #22c55e18; border: 1px solid #22c55e55; color: #22c55e; }
+    .sync-btn-clear  { background: #ef444418; border: 1px solid #ef444455; color: #ef4444; }
+    #import-input { display: none; }
+
+    /* pad content above sync bar */
+    #root > div > div:last-child { padding-bottom: 60px !important; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-input" accept=".json"/>
+
+  <!-- Sync bar -->
+  <div id="sync-bar">
+    <span>💾 Data stored locally in browser</span>
+    <button class="sync-btn sync-btn-export" onclick="exportData()">⬇ Export JSON</button>
+    <button class="sync-btn sync-btn-import" onclick="document.getElementById('import-input').click()">⬆ Import JSON</button>
+    <button class="sync-btn sync-btn-clear" onclick="clearData()">🗑 Clear all data</button>
+  </div>
+
+  <script>
+    const SK = {
+      meals:   "nutrition-meals-v2",
+      db:      "nutrition-db-v1",
+      recipes: "nutrition-recipes-v1",
+      mealRec: "nutrition-meal-recipes-v1",
+    };
+
+    function exportData() {
+      const data = {};
+      Object.entries(SK).forEach(([k, v]) => {
+        const val = localStorage.getItem(v);
+        if (val) data[v] = JSON.parse(val);
+      });
+      data._exported = new Date().toISOString();
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `nutrition-plan-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearData() {
+      if (!confirm('Clear all saved data and restore defaults?')) return;
+      Object.values(SK).forEach(v => localStorage.removeItem(v));
+      location.reload();
+    }
+
+    document.getElementById('import-input').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        try {
+          const data = JSON.parse(ev.target.result);
+          let count = 0;
+          Object.values(SK).forEach(v => {
+            if (data[v]) { localStorage.setItem(v, JSON.stringify(data[v])); count++; }
+          });
+          alert(`Imported ${count} data sets. Reloading…`);
+          location.reload();
+        } catch(err) {
+          alert('Invalid JSON file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      this.value = '';
+    });
+  </script>
+
+  <script type="text/babel">
+    const { useState, useCallback, useEffect } = React;
+
+// ─── FOOD DATABASE ────────────────────────────────────────────────────────────
+const DB_FACTORY = () => ({
+  rice:         { cal:330,  p:6.8,  f:0.3,  c:73.0, unit:"g",   label:"uncooked" },
+  banana:       { cal:89,   p:1.1,  f:0.3,  c:23.0, unit:"pcs", gPerPc:100 },
+  eggs:         { cal:155,  p:13.0, f:11.0, c:1.0,  unit:"pcs", gPerPc:50  },
+  greek_yogurt: { cal:59,   p:10.0, f:0.4,  c:3.3,  unit:"g"   },
+  nuts:         { cal:570,  p:18.0, f:50.0, c:20.0, unit:"g"   },
+  pork_chop:    { cal:143,  p:23.0, f:5.4,  c:0.0,  unit:"g",   label:"uncooked" },
+  fish:         { cal:175,  p:25.0, f:8.0,  c:0.0,  unit:"g",   label:"uncooked" },
+  olive_oil:    { cal:900,  p:0.0,  f:100.0,c:0.0,  unit:"ml"  },
+  veg:          { cal:30,   p:1.0,  f:0.0,  c:5.0,  unit:"g"   },
+  milk:         { cal:33,   p:3.0,  f:1.0,  c:4.3,  unit:"ml"  },
+  sugar:        { cal:387,  p:0.0,  f:0.0,  c:100.0,unit:"g"   },
+  cottage:      { cal:110,  p:14.0, f:4.0,  c:3.0,  unit:"g"   },
+  kefir:        { cal:30,   p:2.4,  f:0.6,  c:3.2,  unit:"ml"  },
+  protein_pwd:  { cal:400,  p:74.3, f:5.7,  c:5.7,  unit:"g"   },
+  sweet_potato: { cal:86,   p:1.6,  f:0.1,  c:20.0, unit:"g",   label:"uncooked" },
+  potatoes:     { cal:77,   p:2.1,  f:0.1,  c:17.0, unit:"g",   label:"uncooked" },
+});
+const ORIGINAL_DB = DB_FACTORY();
+const FOOD_DISPLAY_NAMES = {
+  rice:"White rice", banana:"Banana", eggs:"Eggs", greek_yogurt:"Greek yogurt",
+  nuts:"Nuts (mixed)", pork_chop:"Pork chop", fish:"Fish / Salmon",
+  olive_oil:"Olive oil", veg:"Vegetables", milk:"Milk", sugar:"Sugar",
+  cottage:"Cottage cheese", kefir:"Kefir", protein_pwd:"Protein powder",
+  sweet_potato:"Sweet potato", potatoes:"Potatoes",
+};
+
+function calcFood(key, amount, db) {
+  const food = db[key];
+  if (!food) return { cal:0,p:0,f:0,c:0 };
+  const g = food.unit==="pcs" ? amount*(food.gPerPc||100) : amount;
+  const m = g/100;
+  return { cal:Math.round(food.cal*m), p:rnd(food.p*m), f:rnd(food.f*m), c:rnd(food.c*m) };
+}
+function rnd(v) { return Math.round(v*10)/10; }
+function sumMacros(items) {
+  return items.reduce((a,b)=>({ cal:a.cal+b.cal, p:rnd(a.p+b.p), f:rnd(a.f+b.f), c:rnd(a.c+b.c) }),{cal:0,p:0,f:0,c:0});
+}
+function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+function uid() { return Math.random().toString(36).slice(2,9); }
+
+// ─── MEAL META (time/label/emoji only — no fixed ingredient list) ─────────────
+const GYM_META = [
+  { time:"5:30 AM",  label:"Pre-Workout",  emoji:"⚡", note:"30 min before gym" },
+  { time:"10:00 AM", label:"Post-Workout", emoji:"💪", note:"Right after gym · recovery window" },
+  { time:"12:00 PM", label:"Lunch",        emoji:"🥩", note:"Main meal · high protein" },
+  { time:"5:30 PM",  label:"Dinner",       emoji:"🍽️", note:"Last meal · casein overnight" },
+];
+const REST_META = [
+  { time:"10:00 AM", label:"Breakfast", emoji:"🌅", note:"First meal of the day" },
+  { time:"12:00 PM", label:"Lunch",     emoji:"🥩", note:"Main meal · high protein" },
+  { time:"5:30 PM",  label:"Dinner",    emoji:"🍽️", note:"Last meal" },
+];
+
+// ─── BUILTIN DEFAULTS: each meal = [{key, amount, uid}] ──────────────────────
+// uid is stable per builtin slot so we can identify "is this a builtin item"
+function makeBuiltinMeals() {
+  return {
+    gym: [
+      [ {key:"rice",amount:75,uid:"b-g0-0"}, {key:"banana",amount:1,uid:"b-g0-1"} ],
+      [ {key:"eggs",amount:4,uid:"b-g1-0"}, {key:"banana",amount:1,uid:"b-g1-1"}, {key:"greek_yogurt",amount:150,uid:"b-g1-2"}, {key:"nuts",amount:20,uid:"b-g1-3"} ],
+      [ {key:"pork_chop",amount:200,uid:"b-g2-0"}, {key:"rice",amount:80,uid:"b-g2-1"}, {key:"olive_oil",amount:10,uid:"b-g2-2"}, {key:"veg",amount:150,uid:"b-g2-3"}, {key:"milk",amount:200,uid:"b-g2-4"}, {key:"sugar",amount:10,uid:"b-g2-5"} ],
+      [ {key:"pork_chop",amount:200,uid:"b-g3-0"}, {key:"cottage",amount:250,uid:"b-g3-1"}, {key:"kefir",amount:300,uid:"b-g3-2"}, {key:"protein_pwd",amount:35,uid:"b-g3-3"}, {key:"sweet_potato",amount:150,uid:"b-g3-4"} ],
+    ],
+    rest: [
+      [ {key:"nuts",amount:20,uid:"b-r0-0"}, {key:"eggs",amount:4,uid:"b-r0-1"}, {key:"protein_pwd",amount:35,uid:"b-r0-2"}, {key:"banana",amount:1,uid:"b-r0-3"}, {key:"rice",amount:60,uid:"b-r0-4"} ],
+      [ {key:"pork_chop",amount:200,uid:"b-r1-0"}, {key:"rice",amount:60,uid:"b-r1-1"}, {key:"olive_oil",amount:10,uid:"b-r1-2"}, {key:"veg",amount:150,uid:"b-r1-3"}, {key:"milk",amount:200,uid:"b-r1-4"}, {key:"sugar",amount:10,uid:"b-r1-5"} ],
+      [ {key:"pork_chop",amount:200,uid:"b-r2-0"}, {key:"cottage",amount:250,uid:"b-r2-1"}, {key:"kefir",amount:300,uid:"b-r2-2"}, {key:"potatoes",amount:150,uid:"b-r2-3"} ],
+    ],
+  };
+}
+const BUILTIN = makeBuiltinMeals();
+// Set of all builtin uids for quick lookup
+const BUILTIN_UIDS = new Set(
+  [...BUILTIN.gym, ...BUILTIN.rest].flat().map(i=>i.uid)
+);
+
+// ─── STORAGE KEYS ─────────────────────────────────────────────────────────────
+// SK is declared in the global <script> above
+
+// ─── COLORS ───────────────────────────────────────────────────────────────────
+const C = {
+  bg:"#0a0f1e", surface:"#111827", card:"#1a2235", border:"#1e3a5f",
+  text:"#f1f5f9", muted:"#64748b", blue:"#3b82f6", amber:"#f59e0b",
+  green:"#22c55e", red:"#ef4444", inputBg:"#0f172a", purple:"#a78bfa",
+  teal:"#2dd4bf",
+};
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const Toast = ({ msg, onDone }) => {
+  useEffect(()=>{ const t=setTimeout(onDone,2200); return()=>clearTimeout(t); },[]);
+  return <div style={{ position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:C.green,color:"#fff",fontWeight:700,fontSize:13,padding:"10px 20px",borderRadius:10,zIndex:9999,boxShadow:"0 4px 20px rgba(34,197,94,0.4)",animation:"fadeUp 0.3s ease" }}>{msg}</div>;
+};
+const MacroBar = ({ p,f,c }) => {
+  const tot=p*4+f*9+c*4||1, pp=Math.round(p*4/tot*100), fp=Math.round(f*9/tot*100), cp=Math.round(c*4/tot*100);
+  return <div style={{marginTop:6}}><div style={{display:"flex",height:4,borderRadius:3,overflow:"hidden",gap:1}}><div style={{width:`${pp}%`,background:C.blue}}/><div style={{width:`${fp}%`,background:C.amber}}/><div style={{width:`${cp}%`,background:C.green}}/></div><div style={{display:"flex",gap:10,marginTop:3,fontSize:10,color:C.muted}}><span style={{color:C.blue}}>P {pp}%</span><span style={{color:C.amber}}>F {fp}%</span><span style={{color:C.green}}>C {cp}%</span></div></div>;
+};
+const MacroPills = ({ p,f,c,cal,size="sm" }) => {
+  const fs=size==="lg"?18:13, ls=size==="lg"?10:9;
+  return <div style={{display:"flex",gap:size==="lg"?14:8,alignItems:"center"}}>
+    {[["P",p,C.blue],["F",f,C.amber],["C",c,C.green]].map(([l,v,col])=>(
+      <div key={l} style={{textAlign:"center"}}><div style={{fontSize:fs,fontWeight:800,color:col}}>{v}g</div><div style={{fontSize:ls,color:C.muted}}>{l}</div></div>
+    ))}
+    {cal!=null&&<div style={{textAlign:"center"}}><div style={{fontSize:fs,fontWeight:800,color:C.text}}>{cal}</div><div style={{fontSize:ls,color:C.muted}}>cal</div></div>}
+  </div>;
+};
+function btnStyle(col,sm=true){return{background:col+"18",border:`1px solid ${col}55`,borderRadius:6,color:col,fontSize:sm?10:12,padding:sm?"4px 7px":"6px 12px",cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"};}
+const Input=({value,onChange,placeholder,style={}})=>(
+  <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+    style={{background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:13,padding:"7px 10px",outline:"none",width:"100%",boxSizing:"border-box",...style}}/>
+);
+const NumInput=({value,onChange,step=1,min=0,style={}})=>(
+  <input type="number" value={value} min={min} step={step}
+    onChange={e=>onChange(Math.max(min,parseFloat(e.target.value)||0))}
+    style={{background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:13,fontWeight:700,padding:"5px 6px",textAlign:"center",outline:"none",...style}}/>
+);
+
+// ─── RECIPE MACROS ────────────────────────────────────────────────────────────
+function calcRecipeMacros(recipe, db) {
+  return sumMacros((recipe.ingredients||[]).map(i=>calcFood(i.key,i.amount,db)));
+}
+
+// ─── FOOD PICKER (shared — used in meal and recipe editor) ───────────────────
+const FoodPicker = ({ db, excludeKeys=[], onAdd, onClose, title="Add food to meal", accentColor }) => {
+  const [search, setSearch] = useState("");
+  const col = accentColor || C.purple;
+  const keys = Object.keys(db).filter(k=>
+    !excludeKeys.includes(k) &&
+    (FOOD_DISPLAY_NAMES[k]||k).toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div style={{background:C.inputBg,border:`1px solid ${col}55`,borderRadius:10,padding:"12px 14px",marginTop:4,display:"grid",gap:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontSize:12,fontWeight:700,color:col}}>{title}</div>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:C.muted,fontSize:16,cursor:"pointer"}}>✕</button>
+      </div>
+      <Input value={search} onChange={setSearch} placeholder="🔍 Search food in database…"/>
+      <div style={{maxHeight:180,overflowY:"auto",display:"grid",gap:4}}>
+        {keys.length===0&&<div style={{fontSize:12,color:C.muted}}>No match. Add new foods in the Foods tab.</div>}
+        {keys.map(key=>{
+          const food=db[key];
+          return (
+            <button key={key} onClick={()=>onAdd(key)}
+              style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,padding:"7px 10px",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:600}}>{FOOD_DISPLAY_NAMES[key]||key}{food.label&&<span style={{color:C.muted,fontWeight:400}}> ({food.label})</span>}</span>
+              <span style={{color:C.muted,fontSize:10}}>{food.cal} kcal/100{food.unit==="ml"?"ml":food.unit==="pcs"?"pc":"g"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── INGREDIENT ROW (unified — works for all items in a meal) ─────────────────
+const IngRow = ({ item, db, isBuiltin, onAmountChange, onRemove }) => {
+  const food = db[item.key];
+  const m    = calcFood(item.key, item.amount, db);
+  const unit = food?.unit||"g";
+  const step = unit==="pcs"?1:item.key==="olive_oil"?5:unit==="ml"?50:5;
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 110px auto",gap:8,padding:"8px 0",borderBottom:`1px solid #0f172a`,alignItems:"center"}}>
+      <div>
+        <div style={{fontSize:13,color:isBuiltin?"#cbd5e1":C.purple,fontWeight:isBuiltin?400:600}}>
+          {FOOD_DISPLAY_NAMES[item.key]||item.key}
+          {food?.label&&<span style={{color:C.muted,fontSize:11,marginLeft:4}}>({food.label})</span>}
+          {!isBuiltin&&<span style={{fontSize:10,color:C.purple,marginLeft:5}}>+added</span>}
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginTop:1}}>{m.cal} cal · P:{m.p}g · F:{m.f}g · C:{m.c}g</div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        <input type="number" value={item.amount} min={0} step={step}
+          onChange={e=>onAmountChange(Math.max(0,Number(e.target.value)))}
+          style={{width:62,background:C.inputBg,outline:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:14,fontWeight:700,padding:"5px 6px",textAlign:"center"}}/>
+        <span style={{fontSize:12,color:C.muted,minWidth:22}}>{unit}</span>
+      </div>
+      <button onClick={onRemove}
+        style={{...btnStyle(C.red),padding:"5px 8px",fontSize:13,lineHeight:1}}>×</button>
+    </div>
+  );
+};
+
+// ─── RECIPE ROW (inside meal) ─────────────────────────────────────────────────
+const RecipeRow = ({ recipe, db, scaleFactor, onScaleChange, onRemove }) => {
+  const [open, setOpen] = useState(false);
+  const base = calcRecipeMacros(recipe,db);
+  const sc   = {cal:Math.round(base.cal*scaleFactor),p:rnd(base.p*scaleFactor),f:rnd(base.f*scaleFactor),c:rnd(base.c*scaleFactor)};
+  return (
+    <div style={{border:`1px solid ${C.teal}44`,borderRadius:10,overflow:"hidden",marginTop:4}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 110px 80px",gap:8,padding:"8px 10px",alignItems:"center",background:C.inputBg+"88"}}>
+        <div onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",userSelect:"none"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.teal}}>{recipe.emoji} {recipe.name}</div>
+          <div style={{fontSize:10,color:C.muted,marginTop:1}}>{recipe.ingredients.length} ingr. · {sc.cal} cal · P:{sc.p}g F:{sc.f}g C:{sc.c}g</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <NumInput value={scaleFactor} onChange={onScaleChange} step={0.1} min={0.1} style={{width:52}}/>
+          <span style={{fontSize:11,color:C.muted}}>×</span>
+        </div>
+        <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+          <button onClick={()=>setOpen(o=>!o)} style={{...btnStyle(C.teal),fontSize:12}}>{open?"▾":"▸"}</button>
+          <button onClick={onRemove} style={btnStyle(C.red)}>×</button>
+        </div>
+      </div>
+      {open&&(
+        <div style={{padding:"6px 10px 10px",borderTop:`1px solid ${C.teal}22`}}>
+          {recipe.ingredients.map((ing,i)=>{
+            const food=db[ing.key]; if(!food) return null;
+            const m=calcFood(ing.key,ing.amount*scaleFactor,db);
+            return (
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<recipe.ingredients.length-1?`1px solid ${C.inputBg}`:"none"}}>
+                <span style={{fontSize:11,color:"#94a3b8"}}>{FOOD_DISPLAY_NAMES[ing.key]||ing.key}</span>
+                <span style={{fontSize:10,color:C.muted}}>{rnd(ing.amount*scaleFactor)}{food.unit} · {m.cal} cal P:{m.p}g F:{m.f}g C:{m.c}g</span>
+              </div>
+            );
+          })}
+          <MacroBar p={sc.p} f={sc.f} c={sc.c}/>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── RECIPE PICKER ────────────────────────────────────────────────────────────
+const RecipePicker = ({ recipes, db, onAdd, onClose }) => {
+  const [search, setSearch] = useState("");
+  const filtered = recipes.filter(r=>r.name.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div style={{background:C.inputBg,border:`1px solid ${C.teal}55`,borderRadius:10,padding:"12px 14px",marginTop:4,display:"grid",gap:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.teal}}>Add recipe to meal</div>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:C.muted,fontSize:16,cursor:"pointer"}}>✕</button>
+      </div>
+      <Input value={search} onChange={setSearch} placeholder="🔍 Search recipes…"/>
+      {filtered.length===0&&<div style={{fontSize:12,color:C.muted}}>No recipes found.</div>}
+      {filtered.map(r=>{
+        const tot=calcRecipeMacros(r,db);
+        return (
+          <button key={r.id} onClick={()=>onAdd(r.id)}
+            style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:8,color:C.text,padding:"9px 12px",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:13,fontWeight:700}}>{r.emoji} {r.name}</span>
+            <span style={{fontSize:11,color:C.muted}}>{tot.cal} cal · P:{tot.p}g F:{tot.f}g C:{tot.c}g</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── MEAL CARD ────────────────────────────────────────────────────────────────
+const MealCard = ({ meta, items, mealRecs, recipes, db, builtinItems,
+  onAmountChange, onRemoveItem, onAddItem,
+  onAddRecipe, onRemoveRecipe, onScaleRecipe,
+  onRestoreBuiltin }) => {
+
+  const [open,          setOpen]          = useState(true);
+  const [showFoodPick,  setShowFoodPick]  = useState(false);
+  const [showRecipePick,setShowRecipePick]= useState(false);
+
+  const itemMacros = items.map(it=>calcFood(it.key,it.amount,db));
+  const recMacros  = (mealRecs||[]).map(mr=>{
+    const r=recipes.find(x=>x.id===mr.id); if(!r) return {cal:0,p:0,f:0,c:0};
+    const t=calcRecipeMacros(r,db);
+    return {cal:Math.round(t.cal*mr.scale),p:rnd(t.p*mr.scale),f:rnd(t.f*mr.scale),c:rnd(t.c*mr.scale)};
+  });
+  const total = sumMacros([...itemMacros,...recMacros]);
+
+  // Is this meal identical to builtin?
+  const isModified = items.length!==builtinItems.length ||
+    items.some((it,i)=>it.key!==builtinItems[i]?.key||it.amount!==builtinItems[i]?.amount);
+
+  // Keys already in meal (to exclude from picker)
+  const usedKeys = items.map(i=>i.key);
+  const hasRec   = (mealRecs||[]).length>0;
+  const hasAdded = items.some(it=>!BUILTIN_UIDS.has(it.uid));
+
+  return (
+    <div style={{background:C.card,borderRadius:14,overflow:"hidden",border:`1px solid ${isModified?C.amber+"66":C.border}`}}>
+      {/* ── Header ── */}
+      <div onClick={()=>setOpen(o=>!o)} style={{padding:"14px 16px",cursor:"pointer",userSelect:"none",display:"flex",justifyContent:"space-between",alignItems:"center",background:open?"transparent":"#0f172a"}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,color:C.muted,fontWeight:600,marginBottom:2}}>{meta.emoji} {meta.time}</div>
+          <div style={{fontSize:16,fontWeight:800,color:C.text}}>{meta.label}</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+            {meta.note}
+            {hasAdded&&<span style={{color:C.purple,marginLeft:6}}>· edited</span>}
+            {hasRec&&<span style={{color:C.teal,marginLeft:6}}>+{mealRecs.length} recipe{mealRecs.length>1?"s":""}</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+          <MacroPills p={total.p} f={total.f} c={total.c}/>
+          <div style={{textAlign:"right",minWidth:44}}>
+            <div style={{fontSize:17,fontWeight:900,color:isModified?C.amber:C.text}}>{total.cal}</div>
+            <div style={{fontSize:10,color:C.muted}}>cal</div>
+          </div>
+          <div style={{width:26,height:26,borderRadius:7,background:C.inputBg,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,fontSize:12,flexShrink:0,transform:open?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}>▾</div>
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      {open&&(
+        <div style={{borderTop:`1px solid ${C.border}`,padding:"4px 16px 14px"}}>
+
+          {/* All ingredients (builtin + added, unified) */}
+          {items.map(it=>(
+            <IngRow key={it.uid} item={it} db={db}
+              isBuiltin={BUILTIN_UIDS.has(it.uid)}
+              onAmountChange={v=>onAmountChange(it.uid,v)}
+              onRemove={()=>onRemoveItem(it.uid)}/>
+          ))}
+
+          {/* Add food */}
+          <div style={{marginTop:8}}>
+            <button onClick={()=>{setShowFoodPick(v=>!v);setShowRecipePick(false);}}
+              style={{...btnStyle(C.purple,false),fontSize:12}}>
+              {showFoodPick?"▾ Hide":"🥦 + Add food"}
+            </button>
+            {showFoodPick&&(
+              <FoodPicker db={db} excludeKeys={usedKeys}
+                onAdd={key=>{onAddItem(key);setShowFoodPick(false);}}
+                onClose={()=>setShowFoodPick(false)}
+                accentColor={C.purple}/>
+            )}
+          </div>
+
+          {/* Recipes */}
+          {(mealRecs||[]).map(mr=>{
+            const r=recipes.find(x=>x.id===mr.id); if(!r) return null;
+            return <RecipeRow key={mr.uid} recipe={r} db={db} scaleFactor={mr.scale}
+              onScaleChange={v=>onScaleRecipe(mr.uid,v)}
+              onRemove={()=>onRemoveRecipe(mr.uid)}/>;
+          })}
+          <div style={{marginTop:6}}>
+            <button onClick={()=>{setShowRecipePick(v=>!v);setShowFoodPick(false);}}
+              style={{...btnStyle(C.teal,false),fontSize:12}}>
+              {showRecipePick?"▾ Hide":"🍳 + Add recipe"}
+            </button>
+            {showRecipePick&&recipes.length===0&&<div style={{fontSize:12,color:C.muted,marginTop:6}}>No recipes yet — create one in the Recipes tab.</div>}
+            {showRecipePick&&recipes.length>0&&(
+              <RecipePicker recipes={recipes} db={db}
+                onAdd={id=>{onAddRecipe(id);setShowRecipePick(false);}}
+                onClose={()=>setShowRecipePick(false)}/>
+            )}
+          </div>
+
+          {/* Totals + restore */}
+          <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+            <MacroPills p={total.p} f={total.f} c={total.c}/>
+            <div style={{flex:1}}><MacroBar p={total.p} f={total.f} c={total.c}/></div>
+            {isModified&&(
+              <button onClick={onRestoreBuiltin} style={btnStyle(C.amber)}>↺ restore defaults</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── DAY TOTAL ────────────────────────────────────────────────────────────────
+const DayTotal = ({ mealsList, mealRecsList, recipes, gymDay, db }) => {
+  const ingM = mealsList.flat().map(it=>calcFood(it.key,it.amount,db));
+  const recM = (mealRecsList||[]).flatMap(mrl=>(mrl||[]).map(mr=>{
+    const r=recipes.find(x=>x.id===mr.id); if(!r) return {cal:0,p:0,f:0,c:0};
+    const t=calcRecipeMacros(r,db);
+    return {cal:Math.round(t.cal*mr.scale),p:rnd(t.p*mr.scale),f:rnd(t.f*mr.scale),c:rnd(t.c*mr.scale)};
+  }));
+  const tot=sumMacros([...ingM,...recM]);
+  const calTarget=gymDay?2648:2341;
+  const calOk=Math.abs(tot.cal-calTarget)/calTarget<0.05, calHigh=tot.cal>calTarget*1.05;
+  return (
+    <div style={{background:"#060d1a",borderRadius:14,padding:"16px 18px",border:`1px solid ${C.border}`}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1.5,marginBottom:4}}>DAY TOTAL</div>
+      <div style={{fontSize:10,color:C.muted,marginBottom:12}}>TDEE ~3,271 kcal · deficit ~{gymDay?"620":"440"} kcal · target {calTarget.toLocaleString()} kcal</div>
+      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:28,fontWeight:900,color:calOk?C.green:calHigh?C.red:C.amber}}>{tot.cal}</div>
+          <div style={{fontSize:10,color:C.muted,fontWeight:600}}>CALORIES</div>
+          <div style={{fontSize:10,color:C.muted}}>target: {calTarget.toLocaleString()}</div>
+        </div>
+        {[["PROTEIN",tot.p,C.blue,"≥200g"],["FAT",tot.f,C.amber,"≤95g"],["CARBS",tot.c,C.green,gymDay?"≥230g":"≥180g"]].map(([l,v,col,tgt])=>(
+          <div key={l} style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:900,color:col}}>{v}g</div>
+            <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{l}</div>
+            <div style={{fontSize:10,color:col}}>{tgt}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:10}}><MacroBar p={tot.p} f={tot.f} c={tot.c}/></div>
+    </div>
+  );
+};
+
+// ─── RECIPE EDITOR ────────────────────────────────────────────────────────────
+const RecipeEditor = ({ recipe, db, onSave, onCancel, onAddFood }) => {
+  const [name,  setName]  = useState(recipe?.name||"");
+  const [emoji, setEmoji] = useState(recipe?.emoji||"🍲");
+  const [ings,  setIngs]  = useState(deepClone(recipe?.ingredients||[]));
+  const [showPick, setShowPick] = useState(false);
+  const [newFood,  setNewFood]  = useState(null);
+  const [search,   setSearch]   = useState("");
+
+  const dbKeys = Object.keys(db);
+  const filtered = dbKeys.filter(k=>(FOOD_DISPLAY_NAMES[k]||k).toLowerCase().includes(search.toLowerCase())&&!ings.find(i=>i.key===k));
+  const tot = sumMacros(ings.map(ing=>calcFood(ing.key,ing.amount,db)));
+
+  const addIng=(key)=>{ const food=db[key]; setIngs(p=>[...p,{key,amount:food.unit==="pcs"?1:100}]); setSearch(""); setShowPick(false); };
+  const removeIng=(idx)=>setIngs(p=>p.filter((_,i)=>i!==idx));
+  const updateAmt=(idx,val)=>setIngs(p=>p.map((ing,i)=>i===idx?{...ing,amount:val}:ing));
+  const saveNewFood=()=>{
+    if(!newFood.name.trim()) return;
+    const key=newFood.name.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"")+`_${uid()}`;
+    onAddFood(key,{cal:newFood.cal,p:newFood.p,f:newFood.f,c:newFood.c,unit:newFood.unit,label:"custom"});
+    FOOD_DISPLAY_NAMES[key]=newFood.name.trim();
+    setIngs(p=>[...p,{key,amount:newFood.unit==="pcs"?1:100}]);
+    setNewFood(null); setShowPick(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:C.surface,borderRadius:16,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",border:`1px solid ${C.border}`}}>
+        <div style={{padding:"16px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:16,fontWeight:800,color:C.teal}}>🍳 {recipe?"Edit recipe":"New recipe"}</div>
+          <button onClick={onCancel} style={{background:"transparent",border:"none",color:C.muted,fontSize:20,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:18,display:"grid",gap:14}}>
+          <div style={{display:"flex",gap:8}}>
+            <input value={emoji} onChange={e=>setEmoji(e.target.value)} maxLength={2}
+              style={{width:52,background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:22,padding:"6px",textAlign:"center",outline:"none",flexShrink:0}}/>
+            <Input value={name} onChange={setName} placeholder="Recipe name…" style={{fontSize:15,fontWeight:700}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,marginBottom:8}}>INGREDIENTS</div>
+            {ings.length===0&&<div style={{fontSize:12,color:C.muted,padding:"8px 0"}}>No ingredients yet.</div>}
+            {ings.map((ing,idx)=>{
+              const food=db[ing.key]; if(!food) return null;
+              const m=calcFood(ing.key,ing.amount,db);
+              const step=food.unit==="pcs"?1:ing.key==="olive_oil"?5:food.unit==="ml"?50:5;
+              return (
+                <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 90px 32px",gap:8,padding:"7px 0",borderBottom:`1px solid ${C.inputBg}`,alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:13,color:C.text,fontWeight:600}}>{FOOD_DISPLAY_NAMES[ing.key]||ing.key}</div>
+                    <div style={{fontSize:10,color:C.muted}}>{m.cal} cal · P:{m.p}g · F:{m.f}g · C:{m.c}g</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <NumInput value={ing.amount} onChange={v=>updateAmt(idx,v)} step={step} style={{width:52}}/>
+                    <span style={{fontSize:11,color:C.muted}}>{food.unit}</span>
+                  </div>
+                  <button onClick={()=>removeIng(idx)} style={{background:"transparent",border:"none",color:C.red,fontSize:16,cursor:"pointer",padding:0}}>×</button>
+                </div>
+              );
+            })}
+          </div>
+          {ings.length>0&&(
+            <div style={{background:C.card,borderRadius:10,padding:"10px 14px",border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:10,color:C.muted,fontWeight:700,marginBottom:8}}>RECIPE TOTAL</div>
+              <MacroPills p={tot.p} f={tot.f} c={tot.c} cal={tot.cal}/>
+              <MacroBar p={tot.p} f={tot.f} c={tot.c}/>
+            </div>
+          )}
+          <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+            <button onClick={()=>setShowPick(v=>!v)} style={{width:"100%",background:C.card,border:"none",color:C.teal,fontSize:13,fontWeight:700,padding:"10px 14px",cursor:"pointer",textAlign:"left"}}>
+              {showPick?"▾":"▸"} + Add ingredient
+            </button>
+            {showPick&&(
+              <div style={{padding:"10px 14px",background:C.inputBg,display:"grid",gap:8}}>
+                <Input value={search} onChange={setSearch} placeholder="🔍 Search food…"/>
+                <div style={{maxHeight:160,overflowY:"auto",display:"grid",gap:4}}>
+                  {filtered.length===0&&<div style={{fontSize:12,color:C.muted}}>No match — add a new food below.</div>}
+                  {filtered.map(key=>(
+                    <button key={key} onClick={()=>addIng(key)}
+                      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,padding:"7px 10px",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between"}}>
+                      <span>{FOOD_DISPLAY_NAMES[key]||key}</span>
+                      <span style={{color:C.muted,fontSize:10}}>{db[key]?.unit}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={()=>setNewFood({name:"",cal:0,p:0,f:0,c:0,unit:"g"})}
+                  style={{...btnStyle(C.purple,false),width:"100%",textAlign:"center"}}>+ Add new food to database</button>
+              </div>
+            )}
+          </div>
+          {newFood&&(
+            <div style={{background:C.card,borderRadius:10,padding:"12px 14px",border:`1px solid ${C.purple}55`,display:"grid",gap:10}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.purple}}>New food (per 100g/ml)</div>
+              <Input value={newFood.name} onChange={v=>setNewFood(f=>({...f,name:v}))} placeholder="Food name…"/>
+              <div style={{display:"flex",gap:8}}>
+                {[["kcal","cal",C.text],["protein","p",C.blue],["fat","f",C.amber],["carbs","c",C.green]].map(([lbl,field,col])=>(
+                  <div key={field} style={{flex:1}}>
+                    <div style={{fontSize:9,color:col,fontWeight:700,marginBottom:3}}>{lbl.toUpperCase()}</div>
+                    <NumInput value={newFood[field]} onChange={v=>setNewFood(f=>({...f,[field]:v}))} step={0.1} style={{width:"100%"}}/>
+                  </div>
+                ))}
+                <div style={{flex:1}}>
+                  <div style={{fontSize:9,color:C.muted,fontWeight:700,marginBottom:3}}>UNIT</div>
+                  <select value={newFood.unit} onChange={e=>setNewFood(f=>({...f,unit:e.target.value}))}
+                    style={{background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:12,padding:"6px 4px",width:"100%"}}>
+                    <option value="g">g</option><option value="ml">ml</option><option value="pcs">pcs</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={saveNewFood} style={{...btnStyle(C.green,false),flex:1,textAlign:"center"}}>✓ Add to DB & recipe</button>
+                <button onClick={()=>setNewFood(null)} style={btnStyle(C.muted,false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+          <div style={{display:"flex",gap:8,paddingTop:4}}>
+            <button onClick={()=>onSave({id:recipe?.id||uid(),name:name.trim(),emoji,ingredients:ings})}
+              disabled={!name.trim()||ings.length===0}
+              style={{...btnStyle(C.teal,false),flex:1,textAlign:"center",opacity:(!name.trim()||ings.length===0)?0.4:1}}>
+              💾 Save recipe
+            </button>
+            <button onClick={onCancel} style={btnStyle(C.muted,false)}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── RECIPE CARD ──────────────────────────────────────────────────────────────
+const RecipeCard = ({ recipe, db, onEdit, onDelete }) => {
+  const [open, setOpen] = useState(false);
+  const tot = calcRecipeMacros(recipe,db);
+  return (
+    <div style={{background:C.card,borderRadius:14,overflow:"hidden",border:`1px solid ${C.teal}44`}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{padding:"12px 16px",cursor:"pointer",userSelect:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flex:1}}>
+          <span style={{fontSize:22}}>{recipe.emoji}</span>
+          <div>
+            <div style={{fontSize:15,fontWeight:800,color:C.teal}}>{recipe.name}</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:1}}>{recipe.ingredients.length} ingredients</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+          <MacroPills p={tot.p} f={tot.f} c={tot.c} cal={tot.cal}/>
+          <div style={{width:24,height:24,borderRadius:6,background:C.inputBg,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,fontSize:12,transform:open?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}>▾</div>
+        </div>
+      </div>
+      {open&&(
+        <div style={{borderTop:`1px solid ${C.border}`,padding:"10px 16px 14px"}}>
+          {recipe.ingredients.map((ing,i)=>{
+            const food=db[ing.key]; if(!food) return null;
+            const m=calcFood(ing.key,ing.amount,db);
+            return (
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:i<recipe.ingredients.length-1?`1px solid ${C.inputBg}`:"none"}}>
+                <span style={{fontSize:12,color:C.text}}>{FOOD_DISPLAY_NAMES[ing.key]||ing.key}</span>
+                <span style={{fontSize:11,color:C.muted}}>{ing.amount}{food.unit} — {m.cal} cal · P:{m.p}g F:{m.f}g C:{m.c}g</span>
+              </div>
+            );
+          })}
+          <MacroBar p={tot.p} f={tot.f} c={tot.c}/>
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <button onClick={()=>onEdit(recipe)} style={btnStyle(C.teal,false)}>✏️ Edit</button>
+            <button onClick={()=>onDelete(recipe.id)} style={btnStyle(C.red,false)}>🗑️ Delete</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RecipesTab = ({ recipes, db, onSave, onDelete, onAddFood }) => {
+  const [editing, setEditing] = useState(null);
+  return (
+    <div style={{display:"grid",gap:12}}>
+      <div style={{background:C.card,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.border}`,fontSize:12,color:"#94a3b8",lineHeight:1.6}}>
+        🍳 Create composite recipes. Add them to any meal. Saved permanently.
+      </div>
+      <button onClick={()=>setEditing({})} style={{...btnStyle(C.teal,false),width:"100%",textAlign:"center",padding:"12px",fontSize:14}}>+ New Recipe</button>
+      {recipes.length===0&&<div style={{fontSize:13,color:C.muted,textAlign:"center",padding:"20px 0"}}>No recipes yet.</div>}
+      {recipes.map(r=><RecipeCard key={r.id} recipe={r} db={db} onEdit={r=>setEditing(r)} onDelete={onDelete}/>)}
+      {editing!==null&&(
+        <RecipeEditor recipe={Object.keys(editing).length>0?editing:null} db={db} onAddFood={onAddFood}
+          onSave={r=>{onSave(r);setEditing(null);}} onCancel={()=>setEditing(null)}/>
+      )}
+    </div>
+  );
+};
+
+// ─── SUPPLEMENTS ──────────────────────────────────────────────────────────────
+const SUPPS=[
+  {emoji:"💪",name:"Creatine monohydrate",dose:"5g / day",timing:"Any meal",benefit:"Proven +10–15% strength gain"},
+  {emoji:"☀️",name:"Vitamin D3",dose:"2,000–4,000 IU",timing:"Morning",benefit:"Testosterone & bone health"},
+  {emoji:"😴",name:"Magnesium glycinate",dose:"300–400mg",timing:"Before bed",benefit:"Recovery & sleep quality"},
+  {emoji:"🐟",name:"Omega-3 (fish oil)",dose:"2–3g / day",timing:"With meal",benefit:"Joints & inflammation at 43"},
+];
+const SupplementsTab=()=>(
+  <div style={{display:"grid",gap:10}}>
+    <div style={{background:C.card,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.border}`,fontSize:12,color:"#94a3b8"}}>Science-backed for men 40+ · Take every day</div>
+    {SUPPS.map((s,i)=>(
+      <div key={i} style={{background:C.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+        <div><div style={{fontSize:14,fontWeight:700,color:C.text}}>{s.emoji} {s.name}</div><div style={{fontSize:12,color:C.muted,marginTop:2}}>{s.benefit}</div></div>
+        <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:700,color:C.blue}}>{s.dose}</div><div style={{fontSize:11,color:C.muted}}>{s.timing}</div></div>
+      </div>
+    ))}
+  </div>
+);
+
+// ─── SHOPPING ─────────────────────────────────────────────────────────────────
+const SHOP_CATS=[
+  {label:"🥩 Proteins",keys:["pork_chop","eggs","greek_yogurt","cottage","kefir","protein_pwd"]},
+  {label:"🍚 Carbohydrates",keys:["rice","sweet_potato","potatoes","banana"]},
+  {label:"🥗 Vegetables & Other",keys:["veg","olive_oil","milk","nuts","sugar"]},
+];
+function fmt(a,u){if(!a)return"—";if(u==="pcs")return`${a} pcs`;if(u==="ml")return`${a} ml`;return`${a} g`;}
+const ShoppingTab=({meals})=>{
+  const [gymDays,setGymDays]=useState(4);
+  const [restDays,setRestDays]=useState(3);
+  // Aggregate all items per day type
+  const agg=(dt)=>{
+    const out={};
+    (meals[dt]||[]).forEach(mealItems=>mealItems.forEach(it=>{out[it.key]=(out[it.key]||0)+it.amount;}));
+    return out;
+  };
+  const gym=agg("gym"), rest=agg("rest");
+  const allKeys=[...new Set([...Object.keys(gym),...Object.keys(rest)])];
+  const DayBtn=({value,selected,onClick})=><button onClick={onClick} style={{width:36,height:36,borderRadius:8,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:selected?C.blue:C.inputBg,color:selected?"#fff":C.muted}}>{value}</button>;
+  return(
+    <div style={{display:"grid",gap:14}}>
+      <div style={{background:C.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.border}`}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,marginBottom:12}}>DAYS PER WEEK</div>
+        <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+          {[["🏋️ Gym days",gymDays,setGymDays,restDays,setRestDays],["🛋️ Rest days",restDays,setRestDays,gymDays,setGymDays]].map(([lbl,val,set,other,setOther],idx)=>(
+            <div key={idx}><div style={{fontSize:11,color:C.muted,marginBottom:6}}>{lbl}</div>
+            <div style={{display:"flex",gap:6}}>{[1,2,3,4,5,6,7].map(d=><DayBtn key={d} value={d} selected={val===d} onClick={()=>{set(d);if(d+other>7)setOther(7-d);}}/>)}</div></div>
+          ))}
+        </div>
+        <div style={{marginTop:10,fontSize:12,color:C.muted}}>Total: <strong style={{color:gymDays+restDays===7?C.green:C.amber}}>{gymDays+restDays} days</strong>{gymDays+restDays!==7&&<span style={{color:C.amber}}> · adjust to cover full week</span>}</div>
+      </div>
+      <div style={{background:C.card,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.border}`,fontSize:12,color:"#94a3b8"}}>
+        📦 Weekly quantities · {gymDays} gym + {restDays} rest · All weights uncooked/raw
+      </div>
+      {SHOP_CATS.map((cat,ci)=>{
+        const keys=cat.keys.filter(k=>(gym[k]||0)+(rest[k]||0)>0);
+        // also include any custom/extra keys not in standard categories
+        if(ci===SHOP_CATS.length-1){
+          const catKeys=SHOP_CATS.flatMap(c=>c.keys);
+          allKeys.filter(k=>!catKeys.includes(k)&&((gym[k]||0)+(rest[k]||0)>0)).forEach(k=>keys.push(k));
+        }
+        if(!keys.length) return null;
+        return(
+          <div key={ci} style={{background:C.card,borderRadius:12,overflow:"hidden",border:`1px solid ${C.border}`}}>
+            <div style={{padding:"10px 16px",background:"#0f172a",fontSize:13,fontWeight:700,color:C.text}}>{cat.label}</div>
+            <div style={{padding:"0 16px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"0 10px",padding:"6px 0",borderBottom:`1px solid ${C.border}`}}>
+                {[["ITEM","left"],["GYM/day","right"],["REST/day","right"],["WEEKLY","right"]].map(([h,a],i)=>(
+                  <div key={h} style={{fontSize:9,color:i===3?C.blue:C.muted,fontWeight:700,textAlign:a}}>{h}</div>
+                ))}
+              </div>
+              {keys.map((key,ii)=>{
+                const food=ORIGINAL_DB[key]||db[key]||{unit:"g"};
+                const gymAmt=gym[key]||0, restAmt=rest[key]||0;
+                return(
+                  <div key={key} style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:"0 10px",padding:"9px 0",borderBottom:ii<keys.length-1?`1px solid #0a0f1e`:"none",alignItems:"center"}}>
+                    <div style={{fontSize:12,color:"#cbd5e1"}}>{FOOD_DISPLAY_NAMES[key]||key}</div>
+                    <div style={{fontSize:11,color:gymAmt>0?C.muted:"#334155",textAlign:"right"}}>{fmt(gymAmt,food.unit)}</div>
+                    <div style={{fontSize:11,color:restAmt>0?C.muted:"#334155",textAlign:"right"}}>{fmt(restAmt,food.unit)}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:C.text,textAlign:"right"}}>{fmt(gymAmt*gymDays+restAmt*restDays,food.unit)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── FOOD EDITOR ──────────────────────────────────────────────────────────────
+const MacroField=({label,value,color,onChange})=>(
+  <div style={{flex:1,minWidth:55}}>
+    <div style={{fontSize:9,color,fontWeight:700,marginBottom:3}}>{label}</div>
+    <NumInput value={value} onChange={onChange} step={0.1} style={{width:"100%",fontSize:12}}/>
+  </div>
+);
+const FoodEditor=({db,onUpdate,onReset,onResetAll})=>{
+  const [search,setSearch]=useState("");
+  const keys=Object.keys(db).filter(k=>(FOOD_DISPLAY_NAMES[k]||k).toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div style={{display:"grid",gap:10}}>
+      <div style={{background:C.card,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.border}`,fontSize:12,color:"#94a3b8"}}>✏️ Edit macros per 100g/ml. Changes apply instantly and are <span style={{color:C.purple}}>saved permanently</span>.</div>
+      <div style={{display:"flex",gap:8}}>
+        <Input value={search} onChange={setSearch} placeholder="🔍 Search food…"/>
+        <button onClick={onResetAll} style={{...btnStyle(C.red,false)}}>↺ reset all</button>
+      </div>
+      {keys.map(key=>{
+        const food=db[key],orig=ORIGINAL_DB[key]||{};
+        const isCustom=orig.cal!=null&&(food.cal!==orig.cal||food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
+        return(
+          <div key={key} style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isCustom?C.purple+"66":C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div>
+                <span style={{fontSize:14,fontWeight:700,color:isCustom?C.purple:C.text}}>{FOOD_DISPLAY_NAMES[key]||key}</span>
+                {food.label&&<span style={{fontSize:11,color:C.muted,marginLeft:6}}>({food.label})</span>}
+                <span style={{fontSize:11,color:C.muted,marginLeft:8}}>per 100{food.unit==="ml"?"ml":"g"}</span>
+                {isCustom&&<span style={{fontSize:10,color:C.purple,marginLeft:6,fontWeight:700}}>✏️ custom</span>}
+              </div>
+              {isCustom&&<button onClick={()=>onReset(key)} style={btnStyle(C.muted)}>↺ original</button>}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <MacroField label="KCAL" value={food.cal} color={C.text} onChange={v=>onUpdate(key,"cal",v)}/>
+              <MacroField label="PROTEIN g" value={food.p} color={C.blue} onChange={v=>onUpdate(key,"p",v)}/>
+              <MacroField label="FAT g" value={food.f} color={C.amber} onChange={v=>onUpdate(key,"f",v)}/>
+              <MacroField label="CARBS g" value={food.c} color={C.green} onChange={v=>onUpdate(key,"c",v)}/>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const [tab,     setTab]     = useState("gym");
+  const [toast,   setToast]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [db,      setDb]      = useState(()=>DB_FACTORY());
+  const [recipes, setRecipes] = useState([]);
+
+  // meals: { gym: [[{key,amount,uid},...], ...], rest: [...] }
+  const [meals, setMeals] = useState(()=>deepClone(BUILTIN));
+
+  // mealRecs: { gym: [[{id,scale,uid},...], ...], rest: [...] }
+  const [mealRecs, setMealRecs] = useState(()=>({
+    gym:  GYM_META.map(()=>[]),
+    rest: REST_META.map(()=>[]),
+  }));
+
+  // Load from storage
+  useEffect(()=>{
+    (()=>{
+      try { const _m=localStorage.getItem(SK.meals); if(_m) setMeals(JSON.parse(_m)); } catch(_){}
+      try { const _d=localStorage.getItem(SK.db); if(_d) setDb(prev=>({...prev,...JSON.parse(_d)})); } catch(_){}
+      try { const _v=localStorage.getItem(SK.recipes); if(_v) setRecipes(JSON.parse(r.value)); } catch(_){}
+      try { const _v=localStorage.getItem(SK.mealRec); if(_v) setMealRecs(JSON.parse(r.value)); } catch(_){}
+      setLoading(false);
+    })();
+  },[]);
+
+  const showToast=msg=>setToast(msg);
+
+  // ── Meal item handlers ──
+  const saveMeals = useCallback((next)=>{
+    setMeals(next);
+    localStorage.setItem(SK.meals, JSON.stringify(next));
+  },[]);
+
+  const updateItemAmount = useCallback((dt,mi,itemUid,val)=>{
+    setMeals(prev=>{
+      const next=deepClone(prev);
+      const item=next[dt][mi].find(it=>it.uid===itemUid);
+      if(item) item.amount=val;
+      localStorage.setItem(SK.meals, JSON.stringify(next));
+      return next;
+    });
+  },[]);
+
+  const removeItem = useCallback((dt,mi,itemUid)=>{
+    setMeals(prev=>{
+      const next=deepClone(prev);
+      next[dt][mi]=next[dt][mi].filter(it=>it.uid!==itemUid);
+      localStorage.setItem(SK.meals, JSON.stringify(next));
+      return next;
+    });
+  },[]);
+
+  const addItem = useCallback((dt,mi,key)=>{
+    const food=db[key];
+    const amount=food?.unit==="pcs"?1:100;
+    setMeals(prev=>{
+      const next=deepClone(prev);
+      next[dt][mi]=[...next[dt][mi],{key,amount,uid:uid()}];
+      localStorage.setItem(SK.meals, JSON.stringify(next));
+      return next;
+    });
+  },[db]);
+
+  const restoreBuiltin = useCallback((dt,mi)=>{
+    setMeals(prev=>{
+      const next=deepClone(prev);
+      next[dt][mi]=deepClone(BUILTIN[dt][mi]);
+      localStorage.setItem(SK.meals, JSON.stringify(next));
+      return next;
+    });
+    showToast("↺ Meal restored to default");
+  },[]);
+
+  // ── DB handlers ──
+  const updateDb=useCallback((key,field,val)=>{
+    setDb(prev=>{ const next={...prev,[key]:{...prev[key],[field]:val}}; localStorage.setItem(SK.db, JSON.stringify(next)); return next; });
+  },[]);
+  const resetDbEntry=useCallback((key)=>{
+    setDb(prev=>{ const next={...prev,[key]:{...ORIGINAL_DB[key]}}; localStorage.setItem(SK.db, JSON.stringify(next)); return next; });
+    showToast(`↺ Reset ${FOOD_DISPLAY_NAMES[key]||key}`);
+  },[]);
+  const resetDbAll=useCallback(()=>{
+    setDb(DB_FACTORY()); try{localStorage.removeItem(SK.db);}catch(_){}
+    showToast("↺ All food macros reset");
+  },[]);
+  const addFoodToDb=useCallback((key,food)=>{
+    setDb(prev=>{ const next={...prev,[key]:food}; localStorage.setItem(SK.db, JSON.stringify(next)); return next; });
+  },[]);
+
+  // ── Recipe handlers ──
+  const saveRecipe=useCallback((recipe)=>{
+    setRecipes(prev=>{ const next=prev.find(r=>r.id===recipe.id)?prev.map(r=>r.id===recipe.id?recipe:r):[...prev,recipe]; localStorage.setItem(SK.recipes, JSON.stringify(next)); return next; });
+    showToast(`💾 Recipe "${recipe.name}" saved`);
+  },[]);
+  const deleteRecipe=useCallback((id)=>{
+    setRecipes(prev=>{ const next=prev.filter(r=>r.id!==id); localStorage.setItem(SK.recipes, JSON.stringify(next)); return next; });
+    setMealRecs(prev=>{ const next={gym:prev.gym.map(m=>m.filter(mr=>mr.id!==id)),rest:prev.rest.map(m=>m.filter(mr=>mr.id!==id))}; localStorage.setItem(SK.mealRec, JSON.stringify(next)); return next; });
+  },[]);
+
+  // ── Meal recipe handlers ──
+  const addRecipeToMeal=useCallback((dt,mi,recipeId)=>{
+    setMealRecs(prev=>{ const next={...prev,[dt]:prev[dt].map((m,i)=>i===mi?[...m,{id:recipeId,scale:1,uid:uid()}]:m)}; localStorage.setItem(SK.mealRec, JSON.stringify(next)); return next; });
+  },[]);
+  const removeRecipeFromMeal=useCallback((dt,mi,mUid)=>{
+    setMealRecs(prev=>{ const next={...prev,[dt]:prev[dt].map((m,i)=>i===mi?m.filter(mr=>mr.uid!==mUid):m)}; localStorage.setItem(SK.mealRec, JSON.stringify(next)); return next; });
+  },[]);
+  const scaleRecipeInMeal=useCallback((dt,mi,mUid,scale)=>{
+    setMealRecs(prev=>{ const next={...prev,[dt]:prev[dt].map((m,i)=>i===mi?m.map(mr=>mr.uid===mUid?{...mr,scale}:mr):m)}; localStorage.setItem(SK.mealRec, JSON.stringify(next)); return next; });
+  },[]);
+
+  const tabs=[
+    {id:"gym",  label:"🏋️ Gym Days"},
+    {id:"rest", label:"🛋️ Rest Days"},
+    {id:"supp", label:"💊 Supplements"},
+    {id:"shop", label:"🛒 Shopping"},
+    {id:"food", label:"🥗 Foods"},
+    {id:"recipes",label:"🍳 Recipes"},
+  ];
+
+  const renderDayTab=(dt,meta)=>(
+    <div style={{display:"grid",gap:12}}>
+      <div style={{background:"#0c1829",borderRadius:10,padding:"10px 14px",border:`1px solid ${C.border}`,fontSize:12,color:C.muted,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+        <span>⏰ {dt==="gym"?"5:30 AM – 5:30 PM · 4 meals":"10:00 AM – 5:30 PM · 3 meals"}</span>
+        <span style={{fontSize:11,color:C.green}}>🔥 deficit ~{dt==="gym"?"620":"440"} kcal</span>
+      </div>
+      <div style={{background:"#0c1829",borderRadius:10,padding:"8px 14px",border:`1px solid ${C.border}`,display:"flex",gap:16,flexWrap:"wrap"}}>
+        {[[C.amber,"amber border = modified"],[C.purple,"purple = added food"],[C.teal,"teal = recipe"]].map(([col,lbl])=>(
+          <div key={lbl} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:8,height:8,borderRadius:2,background:col}}/><span style={{fontSize:10,color:C.muted}}>{lbl}</span></div>
+        ))}
+      </div>
+      {meta.map((m,mi)=>(
+        <MealCard key={mi}
+          meta={m}
+          items={meals[dt][mi]||[]}
+          builtinItems={BUILTIN[dt][mi]}
+          mealRecs={mealRecs[dt][mi]}
+          recipes={recipes}
+          db={db}
+          onAmountChange={(itemUid,val)=>updateItemAmount(dt,mi,itemUid,val)}
+          onRemoveItem={(itemUid)=>removeItem(dt,mi,itemUid)}
+          onAddItem={(key)=>addItem(dt,mi,key)}
+          onRestoreBuiltin={()=>restoreBuiltin(dt,mi)}
+          onAddRecipe={id=>addRecipeToMeal(dt,mi,id)}
+          onRemoveRecipe={mUid=>removeRecipeFromMeal(dt,mi,mUid)}
+          onScaleRecipe={(mUid,scale)=>scaleRecipeInMeal(dt,mi,mUid,scale)}
+        />
+      ))}
+      <DayTotal mealsList={meals[dt]} mealRecsList={mealRecs[dt]} recipes={recipes} gymDay={dt==="gym"} db={db}/>
+      <div style={{fontSize:11,color:"#334155",textAlign:"center"}}>⚠️ All weights are uncooked / raw · Measure before cooking</div>
+    </div>
+  );
+
+  if(loading) return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,fontSize:14}}>Loading saved data…</div>;
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'Segoe UI',system-ui,sans-serif",color:C.text}}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
+      {toast&&<Toast msg={toast} onDone={()=>setToast(null)}/>}
+
+      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"18px 16px 14px"}}>
+        <div style={{fontSize:10,fontWeight:700,color:C.blue,letterSpacing:2,marginBottom:4}}>INTERACTIVE NUTRITION PLAN</div>
+        <div style={{fontSize:20,fontWeight:900,color:C.text}}>Your Daily Meal Plan</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:4,display:"flex",gap:10,flexWrap:"wrap"}}>
+          <span>👤 95kg · 185cm · 43yo</span>
+          <span style={{color:C.green}}>🔥 Body recomposition mode</span>
+          <span style={{color:C.purple}}>💾 Persistent storage</span>
+          <span style={{color:C.teal}}>🍳 Recipes enabled</span>
+        </div>
+      </div>
+
+      <div style={{background:C.surface,padding:"0 12px",borderBottom:`1px solid ${C.border}`,display:"flex",overflowX:"auto"}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"none",border:"none",cursor:"pointer",padding:"12px 12px",fontSize:12,fontWeight:700,color:tab===t.id?C.blue:C.muted,borderBottom:tab===t.id?`2px solid ${C.blue}`:"2px solid transparent",whiteSpace:"nowrap"}}>{t.label}</button>
+        ))}
+      </div>
+
+      <div style={{padding:"14px 14px 40px",maxWidth:680,margin:"0 auto"}}>
+        {tab==="gym"     && renderDayTab("gym",  GYM_META)}
+        {tab==="rest"    && renderDayTab("rest", REST_META)}
+        {tab==="supp"    && <SupplementsTab/>}
+        {tab==="shop"    && <ShoppingTab meals={meals} db={db}/>}
+        {tab==="food"    && <FoodEditor db={db} onUpdate={updateDb} onReset={resetDbEntry} onResetAll={resetDbAll}/>}
+        {tab==="recipes" && <RecipesTab recipes={recipes} db={db} onSave={saveRecipe} onDelete={deleteRecipe} onAddFood={addFoodToDb}/>}
+      </div>
+    </div>
+  );
+}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
