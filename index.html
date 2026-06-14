@@ -497,31 +497,126 @@ return (
 );
 };
 
-const DayTotal = ({ mealsList, mealRecsList, recipes, gymDay, db, t }) => {
+const DayTotal = ({ mealsList, mealRecsList, recipes, gymDay, db, t, calcData }) => {
 const ingM=mealsList.flat().map(it=>calcFood(it.key,it.amount,db));
 const recM=(mealRecsList||[]).flatMap(mrl=>(mrl||[]).map(mr=>{ const r=recipes.find(x=>x.id===mr.id); if(!r) return {cal:0,p:0,f:0,c:0}; const tt=calcRecipeMacros(r,db); return {cal:Math.round(tt.cal*mr.scale),p:rnd(tt.p*mr.scale),f:rnd(tt.f*mr.scale),c:rnd(tt.c*mr.scale)}; }));
 const tot=sumMacros([...ingM,...recM]);
-const calTarget=gymDay?2648:2341;
-const calOk=Math.abs(tot.cal-calTarget)/calTarget<0.05, calHigh=tot.cal>calTarget*1.05;
+const isUk=t.dayTotal==="РАЗОМ ЗА ДЕНЬ";
+
+// Compute targets from calcData if available
+let calTarget=null, targetMacros=null;
+if(calcData) {
+  const {weight,age,height,sex,workType,gymDaysPerWeek,gymDurationMin,gymIntensity,walkingMinPerDay,walkingPace,goal,goalAmount,proteinPerKg,fatPct} = calcData;
+  const bmr = Math.round(sex==="male" ? 10*weight+6.25*height-5*age+5 : 10*weight+6.25*height-5*age-161);
+  const workMET={sedentary:1.2,light:1.375,moderate:1.55};
+  const baseActivity = bmr*((workMET[workType]||1.2)-1);
+  const gymMET={light:4,moderate:6,vigorous:8};
+  const gymKcalPerSession=Math.round((gymMET[gymIntensity]||6)*weight*(gymDurationMin/60));
+  const walkMET={slow:2.5,moderate:3.5,fast:4.5};
+  const walkKcalPerDay=Math.round((walkMET[walkingPace]||3.5)*weight*(walkingMinPerDay/60));
+  const tdeeGym=Math.round(bmr+baseActivity+gymKcalPerSession+walkKcalPerDay);
+  const tdeeRest=Math.round(bmr+baseActivity+walkKcalPerDay);
+  const sign=goal==="surplus"?1:goal==="maintain"?0:-1;
+  const targetGym=tdeeGym+sign*(goal==="maintain"?0:goalAmount);
+  const targetRest=tdeeRest+sign*(goal==="maintain"?0:Math.round(goalAmount*0.7));
+  calTarget=gymDay?targetGym:targetRest;
+  const pG=Math.round(weight*proteinPerKg);
+  const fKcal=Math.round(calTarget*fatPct/100);
+  const fG=Math.round(fKcal/9);
+  const cG=Math.round(Math.max(0,calTarget-pG*4-fKcal)/4);
+  targetMacros={p:pG,f:fG,c:cG,cal:calTarget};
+}
+
+// fallback hardcoded targets if no calcData
+const displayTarget = calTarget ?? (gymDay?2648:2341);
+const calOk=Math.abs(tot.cal-displayTarget)/displayTarget<0.05;
+const calHigh=tot.cal>displayTarget*1.05;
+const diffCal=tot.cal-displayTarget;
+
 return (
-<div style={{background:"#060d1a",borderRadius:14,padding:"16px 18px",border:`1px solid ${C.border}`}}>
-<div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1.5,marginBottom:4}}>{t.dayTotal}</div>
-<div style={{fontSize:10,color:C.muted,marginBottom:12}}>{t.tdee(gymDay?"620":"440",calTarget.toLocaleString())}</div>
-<div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-<div style={{textAlign:"center"}}>
-<div style={{fontSize:28,fontWeight:900,color:calOk?C.green:calHigh?C.red:C.amber}}>{tot.cal}</div>
-<div style={{fontSize:10,color:C.muted,fontWeight:600}}>{t.calories}</div>
-<div style={{fontSize:10,color:C.muted}}>{t.target}: {calTarget.toLocaleString()}</div>
-</div>
-{[[t.protein,tot.p,C.blue,"≥200g"],[t.fat,tot.f,C.amber,"≤95g"],[t.carbs,tot.c,C.green,gymDay?"≥230g":"≥180g"]].map(([l,v,col,tgt])=>(
-<div key={l} style={{textAlign:"center"}}>
-<div style={{fontSize:28,fontWeight:900,color:col}}>{v}g</div>
-<div style={{fontSize:10,color:C.muted,fontWeight:600}}>{l}</div>
-<div style={{fontSize:10,color:col}}>{tgt}</div>
-</div>
-))}
-</div>
-<div style={{marginTop:10}}><MacroBar p={tot.p} f={tot.f} c={tot.c}/></div>
+<div style={{background:"#060d1a",borderRadius:14,padding:"16px 18px",border:`1px solid ${C.border}`,display:"grid",gap:14}}>
+
+  {/* Current totals */}
+  <div>
+  <div style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1.5,marginBottom:10}}>{t.dayTotal}</div>
+  <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+  <div style={{textAlign:"center"}}>
+    <div style={{fontSize:28,fontWeight:900,color:calOk?C.green:calHigh?C.red:C.amber}}>{tot.cal}</div>
+    <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{t.calories}</div>
+    <div style={{fontSize:10,color:C.muted}}>{t.target}: {displayTarget.toLocaleString()}</div>
+  </div>
+  {[
+    [t.protein, tot.p, C.blue],
+    [t.fat,     tot.f, C.amber],
+    [t.carbs,   tot.c, C.green],
+  ].map(([l,v,col])=>(
+    <div key={l} style={{textAlign:"center"}}>
+      <div style={{fontSize:28,fontWeight:900,color:col}}>{v}g</div>
+      <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{l}</div>
+      {targetMacros&&<div style={{fontSize:10,color:col}}>/{targetMacros[l===t.protein?"p":l===t.fat?"f":"c"]}g</div>}
+    </div>
+  ))}
+  </div>
+  <div style={{marginTop:10}}><MacroBar p={tot.p} f={tot.f} c={tot.c}/></div>
+  </div>
+
+  {/* Targets + comparison — shown only if calcData saved */}
+  {targetMacros&&(
+  <div style={{borderTop:`1px solid ${C.border}`,paddingTop:12,display:"grid",gap:8}}>
+    <div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:1}}>{isUk?"🎯 ЦІЛІ З КАЛЬКУЛЯТОРА":"🎯 TARGETS FROM CALCULATOR"}</div>
+
+    {/* Target macros row */}
+    <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+      {[
+        [t.calories, targetMacros.cal, C.text],
+        [t.protein,  targetMacros.p+"g", C.blue],
+        [t.fat,      targetMacros.f+"g", C.amber],
+        [t.carbs,    targetMacros.c+"g", C.green],
+      ].map(([l,v,col])=>(
+        <div key={l} style={{textAlign:"center"}}>
+          <div style={{fontSize:18,fontWeight:800,color:col}}>{v}</div>
+          <div style={{fontSize:9,color:C.muted}}>{l}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Difference */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:C.card,borderRadius:8,padding:"8px 12px"}}>
+      <span style={{fontSize:12,color:C.muted}}>{isUk?"Різниця:":"Difference:"}</span>
+      <span style={{fontSize:16,fontWeight:800,color:Math.abs(diffCal)<100?C.green:Math.abs(diffCal)<200?C.amber:C.red}}>
+        {diffCal>0?"+":""}{diffCal} {isUk?"ккал":"kcal"}
+      </span>
+      <span style={{fontSize:11,color:Math.abs(diffCal)<100?C.green:Math.abs(diffCal)<200?C.amber:C.red}}>
+        {Math.abs(diffCal)<100?(isUk?"✓ норма":"✓ on track"):Math.abs(diffCal)<200?(isUk?"скоригувати":"adjust"):(isUk?"переглянути":"review")}
+      </span>
+    </div>
+
+    {/* Macro diffs */}
+    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      {[
+        [t.protein, tot.p, targetMacros.p, C.blue],
+        [t.fat,     tot.f, targetMacros.f, C.amber],
+        [t.carbs,   tot.c, targetMacros.c, C.green],
+      ].map(([l,actual,target,col])=>{
+        const diff=Math.round((actual-target)*10)/10;
+        return (
+          <div key={l} style={{flex:1,background:C.card,borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:70}}>
+            <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{l}</div>
+            <div style={{fontSize:13,fontWeight:700,color:Math.abs(diff)<5?C.green:col}}>
+              {diff>0?"+":""}{diff}g
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+  )}
+
+  {!calcData&&(
+    <div style={{fontSize:10,color:C.muted,borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+      {isUk?"💡 Збережіть дані у вкладці ⚡ Калькулятор для порівняння з цілями":"💡 Save data in ⚡ Calculator tab to compare with targets"}
+    </div>
+  )}
 </div>
 );
 };
@@ -1097,34 +1192,12 @@ return (
     <MetricRow label={L.tdeeAvgLabel} value={tdeeAvg} col={C.blue}/>
   </SCard>
 
-  {/* TARGETS */}
+  {/* TARGETS — calories only */}
   <SCard col={C.amber} title={isUk?"🎯 Цільова калорійність":"🎯 Calorie targets"}>
-    <MetricRow label={L.targetGymLabel} value={targetGym} col={C.amber}/>
-    <MetricRow label={L.targetRestLabel} value={targetRest} col={C.amber}/>
-    <div style={{height:1,background:C.border,margin:"10px 0"}}/>
-    <MacroRow label={L.macroGym} p={proteinG} f={fatGGym} c={carbGGym} cal={targetGym} col={C.green}/>
-    <MacroRow label={L.macroRest} p={proteinG} f={fatGRest} c={carbGRest} cal={targetRest} col={C.teal}/>
-  </SCard>
-
-  {/* COMPARISON */}
-  <SCard col={C.purple} title={L.compare}>
-    <MacroRow label={L.currentGym} p={currentGym.p} f={currentGym.f} c={currentGym.c} cal={currentGym.cal} col={C.green}/>
-    <MacroRow label={L.currentRest} p={currentRest.p} f={currentRest.f} c={currentRest.c} cal={currentRest.cal} col={C.teal}/>
-    <div style={{height:1,background:C.border,margin:"8px 0"}}/>
-    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
-      <span style={{fontSize:12,color:C.muted}}>{L.diffGym}</span>
-      <span style={{fontSize:14,fontWeight:700,color:Math.abs(diffGymCal)<100?C.green:diffGymCal>0?C.red:C.amber}}>
-        {diffGymCal>0?"+":""}{diffGymCal} kcal
-      </span>
-    </div>
-    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
-      <span style={{fontSize:12,color:C.muted}}>{L.diffRest}</span>
-      <span style={{fontSize:14,fontWeight:700,color:Math.abs(diffRestCal)<100?C.green:diffRestCal>0?C.red:C.amber}}>
-        {diffRestCal>0?"+":""}{diffRestCal} kcal
-      </span>
-    </div>
-    <div style={{fontSize:10,color:C.muted,marginTop:6}}>
-      {isUk?"🟢 < 100 ккал = норма · 🟡 > 100 ккал = скоригувати · 🔴 > 200 ккал = переглянути":"🟢 < 100 kcal = on track · 🟡 > 100 = adjust · 🔴 > 200 = review"}
+    <MetricRow label={L.targetGymLabel} value={targetGym} col={C.green}/>
+    <MetricRow label={L.targetRestLabel} value={targetRest} col={C.teal}/>
+    <div style={{fontSize:10,color:C.muted,marginTop:8}}>
+      {isUk?"💡 Макроси та порівняння з раціоном — на вкладках Тренування / Відпочинок":"💡 Macros & diet comparison — see Gym / Rest Day tabs"}
     </div>
   </SCard>
 
@@ -1242,7 +1315,7 @@ return (
 {gymKeys.map((mk,i)=>(
 <MealCard key={mk} metaKey={mk} items={meals.gym[i]||[]} mealRecs={(mealRecs.gym||[])[i]||[]} recipes={recipes} db={db} builtinItems={BUILTIN.gym[i]} onAmountChange={(uid,v)=>updateAmount("gym",i,uid,v)} onRemoveItem={uid=>removeItem("gym",i,uid)} onAddItem={key=>addItem("gym",i,key)} onAddRecipe={id=>addRecipeToMeal("gym",i,id)} onRemoveRecipe={uid=>removeRecipeFromMeal("gym",i,uid)} onScaleRecipe={(uid,s)=>scaleRecipeInMeal("gym",i,uid,s)} onRestoreBuiltin={()=>restoreBuiltin("gym",i)} t={t}/>
 ))}
-<DayTotal mealsList={meals.gym} mealRecsList={mealRecs.gym||[]} recipes={recipes} gymDay={true} db={db} t={t}/>
+<DayTotal mealsList={meals.gym} mealRecsList={mealRecs.gym||[]} recipes={recipes} gymDay={true} db={db} t={t} calcData={calcData}/>
 </div>
 )}
 {tab==="rest"&&(
@@ -1252,7 +1325,7 @@ return (
 {restKeys.map((mk,i)=>(
 <MealCard key={mk} metaKey={mk} items={meals.rest[i]||[]} mealRecs={(mealRecs.rest||[])[i]||[]} recipes={recipes} db={db} builtinItems={BUILTIN.rest[i]} onAmountChange={(uid,v)=>updateAmount("rest",i,uid,v)} onRemoveItem={uid=>removeItem("rest",i,uid)} onAddItem={key=>addItem("rest",i,key)} onAddRecipe={id=>addRecipeToMeal("rest",i,id)} onRemoveRecipe={uid=>removeRecipeFromMeal("rest",i,uid)} onScaleRecipe={(uid,s)=>scaleRecipeInMeal("rest",i,uid,s)} onRestoreBuiltin={()=>restoreBuiltin("rest",i)} t={t}/>
 ))}
-<DayTotal mealsList={meals.rest} mealRecsList={mealRecs.rest||[]} recipes={recipes} gymDay={false} db={db} t={t}/>
+<DayTotal mealsList={meals.rest} mealRecsList={mealRecs.rest||[]} recipes={recipes} gymDay={false} db={db} t={t} calcData={calcData}/>
 </div>
 )}
 {tab==="supp"&&<SuppsTab t={t}/>}
