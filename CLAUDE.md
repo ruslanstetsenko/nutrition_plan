@@ -10,7 +10,19 @@ Open `index.html` directly in a browser — no build step, no server required. A
 python3 -m http.server 8080
 ```
 
-There are no tests, no linter, and no package manager. All dependencies (React 18, ReactDOM, Babel) load from CDN at runtime.
+There is no linter. All dependencies (React 18, ReactDOM, Babel) load from CDN at runtime.
+
+## Running UI tests
+
+Tests use Playwright. Install browsers once with `npx playwright install`, then:
+
+```bash
+npm test            # headless (CI mode)
+npm run test:ui     # interactive Playwright UI (best for manual exploration)
+npm run test:headed # headed browser (watch tests run live)
+```
+
+Test files live in `tests/`: `navigation.spec.js`, `food.spec.js`, `macros.spec.js`, `persistence.spec.js`, `helpers.js`.
 
 ## Architecture
 
