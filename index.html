@@ -43,6 +43,7 @@ meals: p + 'nutrition-meals-v2',
 db: p + 'nutrition-db-v1',
 recipes: p + 'nutrition-recipes-v1',
 mealRec: p + 'nutrition-meal-recipes-v1',
+calc: p + 'nutrition-calc-v1',
 };
 }
 const PROFILES_KEY = 'nutrition-profiles-v1';
@@ -105,7 +106,7 @@ en: {
 appTitle: "INTERACTIVE NUTRITION PLAN",
 appSubtitle: "Your Daily Meal Plan",
 recomp: "🔥 Body recomposition mode",
-tabs: { gym:"🏋️ Gym Days", rest:"🛋️ Rest Days", supp:"💊 Supplements", shop:"🛒 Shopping", food:"🥗 Foods", recipes:"🍳 Recipes" },
+tabs: { gym:"🏋️ Gym Days", rest:"🛋️ Rest Days", supp:"💊 Supplements", shop:"🛒 Shopping", food:"🥗 Foods", recipes:"🍳 Recipes", calc:"⚡ Calculator" },
 gymSchedule: "10:00 AM – 6:00 PM · 3 meals",
 restSchedule: "10:00 AM – 6:00 PM · 3 meals",
 deficit: (n) => `🔥 deficit ~${n} kcal`,
@@ -144,7 +145,7 @@ uk: {
 appTitle: "ІНТЕРАКТИВНИЙ ПЛАН ХАРЧУВАННЯ",
 appSubtitle: "Ваш щоденний план харчування",
 recomp: "🔥 Режим рекомпозиції тіла",
-tabs: { gym:"🏋️ Тренування", rest:"🛋️ Відпочинок", supp:"💊 Добавки", shop:"🛒 Покупки", food:"🥗 Продукти", recipes:"🍳 Рецепти" },
+tabs: { gym:"🏋️ Тренування", rest:"🛋️ Відпочинок", supp:"💊 Добавки", shop:"🛒 Покупки", food:"🥗 Продукти", recipes:"🍳 Рецепти", calc:"⚡ Калькулятор" },
 gymSchedule: "10:00 – 18:00 · 3 прийоми",
 restSchedule: "10:00 – 18:00 · 3 прийоми",
 deficit: (n) => `🔥 дефіцит ~${n} ккал`,
@@ -759,6 +760,271 @@ return (
 );
 };
 
+// ─── CALCULATOR TAB ──────────────────────────────────────────────────────────
+const CALC_DEFAULTS = {
+age:43, weight:95, height:185, sex:"male",
+workType:"sedentary",
+gymDaysPerWeek:4, gymDurationMin:90, gymIntensity:"moderate",
+walkingMinPerDay:60, walkingPace:"moderate",
+goal:"deficit", goalAmount:400,
+proteinPerKg:2.0, fatPct:30,
+};
+
+const CalcTab = ({ calcData, onSave, gymMeals, restMeals, gymMealRecs, restMealRecs, recipes, db, t }) => {
+const [d, setD] = useState(calcData || CALC_DEFAULTS);
+const upd = (k,v) => setD(p=>({...p,[k]:v}));
+
+// BMR — Mifflin-St Jeor
+const bmr = Math.round(
+  d.sex==="male"
+    ? 10*d.weight + 6.25*d.height - 5*d.age + 5
+    : 10*d.weight + 6.25*d.height - 5*d.age - 161
+);
+
+// Activity breakdown
+const workMET = { sedentary:1.2, light:1.375, moderate:1.55 };
+const workFactor = workMET[d.workType] || 1.2;
+const baseActivity = bmr * (workFactor - 1);
+
+// Gym: MET ~6 moderate, ~8 vigorous
+const gymMET = { light:4, moderate:6, vigorous:8 };
+const gymKcalPerSession = Math.round((gymMET[d.gymIntensity]||6) * d.weight * (d.gymDurationMin/60));
+const gymKcalPerDay = Math.round(gymKcalPerSession * d.gymDaysPerWeek / 7);
+
+// Walking: MET ~3.5 moderate pace
+const walkMET = { slow:2.5, moderate:3.5, fast:4.5 };
+const walkKcalPerDay = Math.round((walkMET[d.walkingPace]||3.5) * d.weight * (d.walkingMinPerDay/60));
+
+const tdeeGym = Math.round(bmr + baseActivity + gymKcalPerSession + walkKcalPerDay);
+const tdeeRest = Math.round(bmr + baseActivity + walkKcalPerDay);
+const tdeeAvg = Math.round(tdeeGym*(d.gymDaysPerWeek/7) + tdeeRest*((7-d.gymDaysPerWeek)/7));
+
+const sign = d.goal==="surplus" ? 1 : d.goal==="maintain" ? 0 : -1;
+const targetGym = tdeeGym + sign*d.goalAmount;
+const targetRest = tdeeRest + sign*(d.goal==="maintain"?0:Math.round(d.goalAmount*0.7));
+
+// Macros
+const proteinG = Math.round(d.weight * d.proteinPerKg);
+const proteinKcal = proteinG * 4;
+const fatKcalGym = Math.round(targetGym * d.fatPct / 100);
+const fatGGym = Math.round(fatKcalGym / 9);
+const carbKcalGym = Math.max(0, targetGym - proteinKcal - fatKcalGym);
+const carbGGym = Math.round(carbKcalGym / 4);
+const fatKcalRest = Math.round(targetRest * d.fatPct / 100);
+const fatGRest = Math.round(fatKcalRest / 9);
+const carbKcalRest = Math.max(0, targetRest - proteinKcal - fatKcalRest);
+const carbGRest = Math.round(carbKcalRest / 4);
+
+// Current diet comparison
+const calcMealTotal = (mealsList, mealRecsList) => {
+  const ingM = (mealsList||[]).flat().map(it=>calcFood(it.key,it.amount,db));
+  const recM = (mealRecsList||[]).flatMap(mrl=>(mrl||[]).map(mr=>{
+    const r=recipes.find(x=>x.id===mr.id); if(!r) return {cal:0,p:0,f:0,c:0};
+    const tt=calcRecipeMacros(r,db);
+    return {cal:Math.round(tt.cal*mr.scale),p:rnd(tt.p*mr.scale),f:rnd(tt.f*mr.scale),c:rnd(tt.c*mr.scale)};
+  }));
+  return sumMacros([...ingM,...recM]);
+};
+const currentGym = calcMealTotal(gymMeals, gymMealRecs);
+const currentRest = calcMealTotal(restMeals, restMealRecs);
+
+const isUk = t.tabs.calc === "⚡ Калькулятор";
+const L = {
+  title: isUk?"⚡ Калькулятор енергозатрат":"⚡ Energy Calculator",
+  params: isUk?"Параметри":"Parameters",
+  age: isUk?"Вік (років)":"Age (years)",
+  weight: isUk?"Вага (кг)":"Weight (kg)",
+  height: isUk?"Зріст (см)":"Height (cm)",
+  sex: isUk?"Стать":"Sex",
+  male: isUk?"Чоловік":"Male", female: isUk?"Жінка":"Female",
+  work: isUk?"Робота":"Work",
+  workTypes: isUk?{sedentary:"Сидяча (офіс)",light:"Легка (ходьба)",moderate:"Помірна (стоячи)"}:{sedentary:"Sedentary (office)",light:"Light (walking)",moderate:"Moderate (standing)"},
+  gym: isUk?"Тренування":"Gym",
+  gymDays: isUk?"Днів/тиждень":"Days/week",
+  gymDur: isUk?"Тривалість (хв)":"Duration (min)",
+  gymInt: isUk?"Інтенсивність":"Intensity",
+  intensities: isUk?{light:"Легка",moderate:"Помірна",vigorous:"Висока"}:{light:"Light",moderate:"Moderate",vigorous:"Vigorous"},
+  walking: isUk?"Ходьба":"Walking",
+  walkMin: isUk?"Хв/день":"Min/day",
+  walkPace: isUk?"Темп":"Pace",
+  paces: isUk?{slow:"Повільний",moderate:"Середній",fast:"Швидкий"}:{slow:"Slow",moderate:"Moderate",fast:"Fast"},
+  goal: isUk?"Ціль":"Goal",
+  goals: isUk?{deficit:"Дефіцит (схуднення)",maintain:"Підтримка",surplus:"Профіцит (набір)"}:{deficit:"Deficit (cut)",maintain:"Maintain",surplus:"Surplus (bulk)"},
+  goalAmt: isUk?"Дефіцит/профіцит (ккал)":"Deficit/surplus (kcal)",
+  macros: isUk?"Розподіл макросів":"Macro split",
+  proteinKg: isUk?"Білок (г/кг ваги)":"Protein (g/kg)",
+  fatPct: isUk?"Жири (% від калорій)":"Fat (% of calories)",
+  results: isUk?"Результати":"Results",
+  bmrLabel: isUk?"BMR (базовий метаболізм)":"BMR (basal metabolic rate)",
+  tdeeGymLabel: isUk?"TDEE день тренування":"TDEE gym day",
+  tdeeRestLabel: isUk?"TDEE день відпочинку":"TDEE rest day",
+  tdeeAvgLabel: isUk?"TDEE середній":"TDEE average",
+  targetGymLabel: isUk?"Ціль день тренування":"Target gym day",
+  targetRestLabel: isUk?"Ціль день відпочинку":"Target rest day",
+  macroGym: isUk?"Макроси тренування":"Gym day macros",
+  macroRest: isUk?"Макроси відпочинку":"Rest day macros",
+  compare: isUk?"Порівняння з поточним раціоном":"Comparison with current diet",
+  currentGym: isUk?"Поточний раціон (трен)":"Current diet (gym)",
+  currentRest: isUk?"Поточний раціон (відп)":"Current diet (rest)",
+  diffGym: isUk?"Різниця (трен)":"Difference (gym)",
+  diffRest: isUk?"Різниця (відп)":"Difference (rest)",
+  save: isUk?"💾 Зберегти":"💾 Save",
+  saved: isUk?"✓ Збережено":"✓ Saved",
+  breakdown: isUk?"Розбивка активності":"Activity breakdown",
+  workAct: isUk?"Активність на роботі":"Work activity",
+  gymAct: isUk?"Тренування/день (сер)":"Gym kcal/day (avg)",
+  walkAct: isUk?"Ходьба/день":"Walking/day",
+};
+
+const [saved, setSaved] = useState(false);
+const handleSave = () => { onSave(d); setSaved(true); setTimeout(()=>setSaved(false),2000); };
+
+const SLabel = ({children}) => <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:5,letterSpacing:0.5}}>{children}</div>;
+const SCard = ({children,col,title}) => (
+  <div style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${(col||C.border)+"44"}`}}>
+    {title&&<div style={{fontSize:11,fontWeight:700,color:col||C.muted,letterSpacing:1,marginBottom:10}}>{title}</div>}
+    {children}
+  </div>
+);
+const MetricRow = ({label,value,unit="ккал",col}) => (
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid #0f172a`}}>
+    <span style={{fontSize:12,color:C.muted}}>{label}</span>
+    <span style={{fontSize:14,fontWeight:700,color:col||C.text}}>{value} <span style={{fontSize:10,color:C.muted}}>{unit}</span></span>
+  </div>
+);
+const MacroRow = ({label,p,f,c,cal,col}) => (
+  <div style={{marginBottom:8}}>
+    <div style={{fontSize:11,color:col||C.muted,fontWeight:600,marginBottom:4}}>{label}</div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+      {[["P",p,C.blue],["F",f,C.amber],["C",c,C.green],["cal",cal,C.text]].map(([l,v,co])=>(
+        <div key={l} style={{textAlign:"center",minWidth:44}}>
+          <div style={{fontSize:15,fontWeight:800,color:co}}>{v}{l==="cal"?"":""}</div>
+          <div style={{fontSize:9,color:C.muted}}>{l}{l!=="cal"?"g":"kcal"}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const diffGymCal = currentGym.cal - targetGym;
+const diffRestCal = currentRest.cal - targetRest;
+
+const Select = ({value, onChange, options}) => (
+  <select value={value} onChange={e=>onChange(e.target.value)}
+    style={{background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"6px 8px",fontSize:12,width:"100%",outline:"none"}}>
+    {Object.entries(options).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+  </select>
+);
+
+return (
+<div style={{display:"grid",gap:14,animation:"fadeIn 0.2s ease"}}>
+  <div style={{fontSize:11,color:C.blue,fontWeight:700,textAlign:"center"}}>{L.title}</div>
+
+  {/* PARAMS */}
+  <SCard col={C.blue} title={L.params}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+      <div><SLabel>{L.age}</SLabel><NumInp value={d.age} onChange={v=>upd("age",v)} min={10} style={{width:"100%"}}/></div>
+      <div><SLabel>{L.weight}</SLabel><NumInp value={d.weight} onChange={v=>upd("weight",v)} min={30} step={0.5} style={{width:"100%"}}/></div>
+      <div><SLabel>{L.height}</SLabel><NumInp value={d.height} onChange={v=>upd("height",v)} min={100} style={{width:"100%"}}/></div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div><SLabel>{L.sex}</SLabel>
+        <div style={{display:"flex",gap:6}}>
+          {["male","female"].map(s=>(
+            <button key={s} onClick={()=>upd("sex",s)} style={{...btnStyle(d.sex===s?C.blue:C.muted,false),flex:1,textAlign:"center"}}>
+              {s==="male"?L.male:L.female}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div><SLabel>{L.work}</SLabel><Select value={d.workType} onChange={v=>upd("workType",v)} options={L.workTypes}/></div>
+    </div>
+  </SCard>
+
+  {/* GYM */}
+  <SCard col={C.green} title={L.gym}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+      <div><SLabel>{L.gymDays}</SLabel><NumInp value={d.gymDaysPerWeek} onChange={v=>upd("gymDaysPerWeek",Math.min(7,v))} min={0} max={7} style={{width:"100%"}}/></div>
+      <div><SLabel>{L.gymDur}</SLabel><NumInp value={d.gymDurationMin} onChange={v=>upd("gymDurationMin",v)} min={10} step={5} style={{width:"100%"}}/></div>
+      <div><SLabel>{L.gymInt}</SLabel><Select value={d.gymIntensity} onChange={v=>upd("gymIntensity",v)} options={L.intensities}/></div>
+    </div>
+  </SCard>
+
+  {/* WALKING */}
+  <SCard col={C.teal} title={L.walking}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div><SLabel>{L.walkMin}</SLabel><NumInp value={d.walkingMinPerDay} onChange={v=>upd("walkingMinPerDay",v)} min={0} step={5} style={{width:"100%"}}/></div>
+      <div><SLabel>{L.walkPace}</SLabel><Select value={d.walkingPace} onChange={v=>upd("walkingPace",v)} options={L.paces}/></div>
+    </div>
+  </SCard>
+
+  {/* GOAL */}
+  <SCard col={C.amber} title={L.goal}>
+    <div style={{marginBottom:10}}><Select value={d.goal} onChange={v=>upd("goal",v)} options={L.goals}/></div>
+    {d.goal!=="maintain"&&(
+      <div><SLabel>{L.goalAmt}</SLabel><NumInp value={d.goalAmount} onChange={v=>upd("goalAmount",v)} min={50} step={50} style={{width:"100%"}}/></div>
+    )}
+  </SCard>
+
+  {/* MACROS */}
+  <SCard col={C.purple} title={L.macros}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div><SLabel>{L.proteinKg}</SLabel><NumInp value={d.proteinPerKg} onChange={v=>upd("proteinPerKg",v)} min={1} max={3} step={0.1} style={{width:"100%"}}/></div>
+      <div><SLabel>{L.fatPct}</SLabel><NumInp value={d.fatPct} onChange={v=>upd("fatPct",Math.min(60,Math.max(15,v)))} min={15} max={60} step={1} style={{width:"100%"}}/></div>
+    </div>
+  </SCard>
+
+  {/* RESULTS */}
+  <SCard col={C.blue} title={L.results}>
+    <MetricRow label={L.bmrLabel} value={bmr} col={C.blue}/>
+    <div style={{marginTop:8,marginBottom:4,fontSize:10,color:C.muted,fontWeight:700,letterSpacing:0.5}}>{L.breakdown}</div>
+    <MetricRow label={L.workAct} value={Math.round(baseActivity)}/>
+    <MetricRow label={L.gymAct} value={gymKcalPerDay}/>
+    <MetricRow label={L.walkAct} value={walkKcalPerDay}/>
+    <div style={{height:1,background:C.border,margin:"8px 0"}}/>
+    <MetricRow label={L.tdeeGymLabel} value={tdeeGym} col={C.green}/>
+    <MetricRow label={L.tdeeRestLabel} value={tdeeRest} col={C.teal}/>
+    <MetricRow label={L.tdeeAvgLabel} value={tdeeAvg} col={C.blue}/>
+  </SCard>
+
+  {/* TARGETS */}
+  <SCard col={C.amber} title={isUk?"🎯 Цільова калорійність":"🎯 Calorie targets"}>
+    <MetricRow label={L.targetGymLabel} value={targetGym} col={C.amber}/>
+    <MetricRow label={L.targetRestLabel} value={targetRest} col={C.amber}/>
+    <div style={{height:1,background:C.border,margin:"10px 0"}}/>
+    <MacroRow label={L.macroGym} p={proteinG} f={fatGGym} c={carbGGym} cal={targetGym} col={C.green}/>
+    <MacroRow label={L.macroRest} p={proteinG} f={fatGRest} c={carbGRest} cal={targetRest} col={C.teal}/>
+  </SCard>
+
+  {/* COMPARISON */}
+  <SCard col={C.purple} title={L.compare}>
+    <MacroRow label={L.currentGym} p={currentGym.p} f={currentGym.f} c={currentGym.c} cal={currentGym.cal} col={C.green}/>
+    <MacroRow label={L.currentRest} p={currentRest.p} f={currentRest.f} c={currentRest.c} cal={currentRest.cal} col={C.teal}/>
+    <div style={{height:1,background:C.border,margin:"8px 0"}}/>
+    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+      <span style={{fontSize:12,color:C.muted}}>{L.diffGym}</span>
+      <span style={{fontSize:14,fontWeight:700,color:Math.abs(diffGymCal)<100?C.green:diffGymCal>0?C.red:C.amber}}>
+        {diffGymCal>0?"+":""}{diffGymCal} kcal
+      </span>
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+      <span style={{fontSize:12,color:C.muted}}>{L.diffRest}</span>
+      <span style={{fontSize:14,fontWeight:700,color:Math.abs(diffRestCal)<100?C.green:diffRestCal>0?C.red:C.amber}}>
+        {diffRestCal>0?"+":""}{diffRestCal} kcal
+      </span>
+    </div>
+    <div style={{fontSize:10,color:C.muted,marginTop:6}}>
+      {isUk?"🟢 < 100 ккал = норма · 🟡 > 100 ккал = скоригувати · 🔴 > 200 ккал = переглянути":"🟢 < 100 kcal = on track · 🟡 > 100 = adjust · 🔴 > 200 = review"}
+    </div>
+  </SCard>
+
+  <button onClick={handleSave} style={{...btnStyle(saved?C.green:C.blue,false),padding:"12px",textAlign:"center",fontSize:13}}>
+    {saved?L.saved:L.save}
+  </button>
+</div>
+);
+};
+
 const App = () => {
 const [profiles,setProfiles]=useState(()=>{
 const saved=localStorage.getItem(PROFILES_KEY);
@@ -776,12 +1042,14 @@ const [meals,setMeals]=useState(()=>{ try{ const s=localStorage.getItem(sk.meals
 const [db,setDb]=useState(()=>{ try{ const s=localStorage.getItem(sk.db); return s?{...DB_FACTORY(),...JSON.parse(s)}:DB_FACTORY(); }catch{ return DB_FACTORY(); }});
 const [recipes,setRecipes]=useState(()=>{ try{ const s=localStorage.getItem(sk.recipes); return s?JSON.parse(s):[]; }catch{ return []; }});
 const [mealRecs,setMealRecs]=useState(()=>{ try{ const s=localStorage.getItem(sk.mealRec); return s?JSON.parse(s):{gym:[[],[],[]], rest:[[],[],[]]}; }catch{ return {gym:[[],[],[]], rest:[[],[],[]]}; }});
+const [calcData,setCalcData]=useState(()=>{ try{ const s=localStorage.getItem(sk.calc); return s?JSON.parse(s):null; }catch{ return null; }});
 const [tab,setTab]=useState("gym");
 const [toast,setToast]=useState(null);
 useEffect(()=>{ localStorage.setItem(sk.meals,JSON.stringify(meals)); },[meals,sk.meals]);
 useEffect(()=>{ localStorage.setItem(sk.db,JSON.stringify(db)); },[db,sk.db]);
 useEffect(()=>{ localStorage.setItem(sk.recipes,JSON.stringify(recipes)); },[recipes,sk.recipes]);
 useEffect(()=>{ localStorage.setItem(sk.mealRec,JSON.stringify(mealRecs)); },[mealRecs,sk.mealRec]);
+useEffect(()=>{ if(calcData) localStorage.setItem(sk.calc,JSON.stringify(calcData)); },[calcData,sk.calc]);
 useEffect(()=>{ localStorage.setItem(PROFILES_KEY,JSON.stringify(profiles)); },[profiles]);
 useEffect(()=>{ localStorage.setItem(ACTIVE_KEY,activeId); },[activeId]);
 useEffect(()=>{ localStorage.setItem(LANG_KEY,lang); },[lang]);
@@ -793,6 +1061,7 @@ try{ const s=localStorage.getItem(nsk.meals); setMeals(s?JSON.parse(s):deepClone
 try{ const s=localStorage.getItem(nsk.db); setDb(s?{...DB_FACTORY(),...JSON.parse(s)}:DB_FACTORY()); }catch{ setDb(DB_FACTORY()); }
 try{ const s=localStorage.getItem(nsk.recipes); setRecipes(s?JSON.parse(s):[]); }catch{ setRecipes([]); }
 try{ const s=localStorage.getItem(nsk.mealRec); setMealRecs(s?JSON.parse(s):{gym:[[],[],[]], rest:[[],[],[]]}); }catch{ setMealRecs({gym:[[],[],[]], rest:[[],[],[]]}); }
+try{ const s=localStorage.getItem(nsk.calc); setCalcData(s?JSON.parse(s):null); }catch{ setCalcData(null); }
 setShowProfiles(false);
 };
 const createProfile=name=>{
@@ -833,6 +1102,7 @@ const tabs=[
 {key:"gym",label:t.tabs.gym},{key:"rest",label:t.tabs.rest},
 {key:"supp",label:t.tabs.supp},{key:"shop",label:t.tabs.shop},
 {key:"food",label:t.tabs.food},{key:"recipes",label:t.tabs.recipes},
+{key:"calc",label:t.tabs.calc},
 ];
 
 return (
@@ -878,6 +1148,7 @@ return (
 {tab==="shop"&&<ShopTab gymMeals={meals.gym} restMeals={meals.rest} gymMealRecs={mealRecs.gym||[]} restMealRecs={mealRecs.rest||[]} recipes={recipes} db={db} t={t}/>}
 {tab==="food"&&<FoodTab db={db} onUpdateFood={updateFood} onResetFood={resetFood} onResetAllFoods={resetAllFoods} t={t}/>}
 {tab==="recipes"&&<RecipesTab db={db} recipes={recipes} onSaveRecipe={saveRecipe} onDeleteRecipe={deleteRecipe} onAddFood={addFoodToDb} t={t}/>}
+{tab==="calc"&&<CalcTab calcData={calcData} onSave={setCalcData} gymMeals={meals.gym} restMeals={meals.rest} gymMealRecs={mealRecs.gym||[]} restMealRecs={mealRecs.rest||[]} recipes={recipes} db={db} t={t}/>}
 </div>
 );
 };
