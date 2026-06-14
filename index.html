@@ -1311,7 +1311,7 @@ return (
 <div style={{fontSize:9,fontWeight:700,color:C.blue,letterSpacing:3,marginBottom:4}}>{t.appTitle}</div>
 <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,flexWrap:"wrap"}}>
 <button onClick={()=>setShowProfiles(true)} style={{...btnStyle(C.blue,false),fontSize:11}}>👤 {activeProfile?.name}</button>
-<button onClick={()=>{ const nl=lang==="en"?"uk":"en"; setLang(nl); }} style={{...btnStyle(C.muted,false),fontSize:11}}>{lang==="en"?"🇺🇦 UA":"🇬🇧 EN"}</button>
+<button onClick={()=>{ const nl=lang==="en"?"uk":"en"; setLang(nl); }} style={{...btnStyle(C.muted,false),fontSize:11}}>{lang==="en"?"🇬🇧 EN":"🇺🇦 UA"}</button>
 </div>
 
 </div>
