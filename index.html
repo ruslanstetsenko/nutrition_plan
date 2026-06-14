@@ -182,33 +182,40 @@ resetAllFoodsToast: "↺ Всі продукти скинуто",
 };
 
 const DB_FACTORY = () => ({
-rice: { cal:330, p:6.8, f:0.3, c:73.0, unit:"g", label:"uncooked" },
-banana: { cal:89, p:1.1, f:0.3, c:23.0, unit:"pcs", gPerPc:100 },
-eggs: { cal:155, p:13.0, f:11.0, c:1.0, unit:"pcs", gPerPc:50 },
-greek_yogurt: { cal:59, p:10.0, f:0.4, c:3.3, unit:"g" },
-nuts: { cal:570, p:18.0, f:50.0, c:20.0, unit:"g" },
-pork_chop: { cal:143, p:23.0, f:5.4, c:0.0, unit:"g", label:"uncooked" },
-fish: { cal:175, p:25.0, f:8.0, c:0.0, unit:"g", label:"uncooked" },
-olive_oil: { cal:900, p:0.0, f:100.0,c:0.0, unit:"ml" },
-veg: { cal:30, p:1.0, f:0.0, c:5.0, unit:"g" },
-milk: { cal:33, p:3.0, f:1.0, c:4.3, unit:"ml" },
-sugar: { cal:387, p:0.0, f:0.0, c:100.0,unit:"g" },
-cottage: { cal:110, p:14.0, f:4.0, c:3.0, unit:"g" },
-kefir: { cal:30, p:2.4, f:0.6, c:3.2, unit:"ml" },
-protein_pwd: { cal:400, p:74.3, f:5.7, c:5.7, unit:"g" },
-sweet_potato: { cal:86, p:1.6, f:0.1, c:20.0, unit:"g", label:"uncooked" },
-potatoes: { cal:77, p:2.1, f:0.1, c:17.0, unit:"g", label:"uncooked" },
+rice:         { p:6.8,  f:0.3,   c:73.0, unit:"g",   label:"uncooked", cat:"grains" },
+banana:       { p:1.1,  f:0.3,   c:23.0, unit:"pcs",  gPerPc:100, cat:"fruits" },
+eggs:         { p:13.0, f:11.0,  c:1.0,  unit:"pcs",  gPerPc:50,  cat:"protein" },
+greek_yogurt: { p:10.0, f:0.4,   c:3.3,  unit:"g",   cat:"dairy" },
+nuts:         { p:18.0, f:50.0,  c:20.0, unit:"g",   cat:"fats" },
+pork_chop:    { p:23.0, f:5.4,   c:0.0,  unit:"g",   label:"uncooked", cat:"protein" },
+fish:         { p:25.0, f:8.0,   c:0.0,  unit:"g",   label:"uncooked", cat:"protein" },
+olive_oil:    { p:0.0,  f:100.0, c:0.0,  unit:"ml",  cat:"fats" },
+veg:          { p:1.0,  f:0.0,   c:5.0,  unit:"g",   cat:"vegetables" },
+milk:         { p:3.0,  f:1.0,   c:4.3,  unit:"ml",  cat:"dairy" },
+sugar:        { p:0.0,  f:0.0,   c:100.0,unit:"g",   cat:"other" },
+cottage:      { p:14.0, f:4.0,   c:3.0,  unit:"g",   cat:"dairy" },
+kefir:        { p:2.4,  f:0.6,   c:3.2,  unit:"ml",  cat:"dairy" },
+protein_pwd:  { p:74.3, f:5.7,   c:5.7,  unit:"g",   cat:"protein" },
+sweet_potato: { p:1.6,  f:0.1,   c:20.0, unit:"g",   label:"uncooked", cat:"grains" },
+potatoes:     { p:2.1,  f:0.1,   c:17.0, unit:"g",   label:"uncooked", cat:"grains" },
 });
 
 const ORIGINAL_DB = DB_FACTORY();
 
-function getFoodName(key, t) { return t.foodNames[key] || key; }
+// cal завжди рахується з макросів: p*4 + f*9 + c*4
+function macrosToCal(p,f,c) { return Math.round(p*4 + f*9 + c*4); }
+
+function getFoodName(key, t, db) {
+  if (db && db[key] && db[key].displayName) return db[key].displayName;
+  return t.foodNames[key] || key;
+}
 function calcFood(key, amount, db) {
 const food = db[key];
 if (!food) return { cal:0,p:0,f:0,c:0 };
 const g = food.unit==="pcs" ? amount*(food.gPerPc||100) : amount;
 const m = g/100;
-return { cal:Math.round(food.cal*m), p:rnd(food.p*m), f:rnd(food.f*m), c:rnd(food.c*m) };
+const p=rnd(food.p*m), f=rnd(food.f*m), c=rnd(food.c*m);
+return { cal:macrosToCal(p,f,c), p, f, c };
 }
 function rnd(v) { return Math.round(v*10)/10; }
 function sumMacros(items) {
@@ -333,7 +340,7 @@ style={{...btnStyle(C.green,false),flex:1,textAlign:"center"}}>{pt.create}</butt
 const FoodPicker = ({ db, excludeKeys=[], onAdd, onClose, t, accentColor }) => {
 const [search, setSearch] = useState("");
 const col = accentColor || C.purple;
-const keys = Object.keys(db).filter(k=>!excludeKeys.includes(k)&&(getFoodName(k,t)).toLowerCase().includes(search.toLowerCase()));
+const keys = Object.keys(db).filter(k=>!excludeKeys.includes(k)&&(getFoodName(k,t,db)).toLowerCase().includes(search.toLowerCase()));
 return (
 <div style={{background:C.inputBg,border:`1px solid ${col}55`,borderRadius:10,padding:"12px 14px",marginTop:4,display:"grid",gap:8}}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -347,8 +354,8 @@ return (
 const food=db[key];
 return (
 <button key={key} onClick={()=>onAdd(key)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,padding:"7px 10px",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-<span style={{fontWeight:600}}>{getFoodName(key,t)}{food.label&&<span style={{color:C.muted,fontWeight:400}}> ({food.label})</span>}</span>
-<span style={{color:C.muted,fontSize:10}}>{food.cal} kcal/100{food.unit==="ml"?"ml":food.unit==="pcs"?"pc":"g"}</span>
+<span style={{fontWeight:600}}>{getFoodName(key,t,db)}{food.label&&<span style={{color:C.muted,fontWeight:400}}> ({food.label})</span>}</span>
+<span style={{color:C.muted,fontSize:10}}>{macrosToCal(food.p,food.f,food.c)} kcal/100{food.unit==="ml"?"ml":food.unit==="pcs"?"pc":"g"}</span>
 </button>
 );
 })}
@@ -364,7 +371,7 @@ return (
 <div style={{display:"grid",gridTemplateColumns:"1fr 110px auto",gap:8,padding:"8px 0",borderBottom:`1px solid #0f172a`,alignItems:"center"}}>
 <div>
 <div style={{fontSize:13,color:isBuiltin?"#cbd5e1":C.purple,fontWeight:isBuiltin?400:600}}>
-{getFoodName(item.key,t)}{food?.label&&<span style={{color:C.muted,fontSize:11,marginLeft:4}}>({food.label})</span>}
+{getFoodName(item.key,t,db)}{food?.label&&<span style={{color:C.muted,fontSize:11,marginLeft:4}}>({food.label})</span>}
 {!isBuiltin&&<span style={{fontSize:10,color:C.purple,marginLeft:5}}>{t.added}</span>}
 </div>
 <div style={{fontSize:11,color:C.muted,marginTop:1}}>{m.cal} cal · P:{m.p}g · F:{m.f}g · C:{m.c}g</div>
@@ -404,7 +411,7 @@ return (
 const food=db[ing.key]; if(!food) return null;
 const m=calcFood(ing.key,ing.amount*scaleFactor,db);
 return <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<recipe.ingredients.length-1?`1px solid ${C.inputBg}`:"none"}}>
-<span style={{fontSize:11,color:"#94a3b8"}}>{getFoodName(ing.key,t)}</span>
+<span style={{fontSize:11,color:"#94a3b8"}}>{getFoodName(ing.key,t,db)}</span>
 <span style={{fontSize:10,color:C.muted}}>{rnd(ing.amount*scaleFactor)}{food.unit} · {m.cal} cal P:{m.p}g F:{m.f}g C:{m.c}g</span>
 </div>;
 })}
@@ -528,13 +535,13 @@ const [showPick,setShowPick]=useState(false);
 const [newFood,setNewFood]=useState(null);
 const [search,setSearch]=useState("");
 const dbKeys=Object.keys(db);
-const filtered=dbKeys.filter(k=>(getFoodName(k,t)).toLowerCase().includes(search.toLowerCase())&&!ings.find(i=>i.key===k));
+const filtered=dbKeys.filter(k=>(getFoodName(k,t,db)).toLowerCase().includes(search.toLowerCase())&&!ings.find(i=>i.key===k));
 const tot=sumMacros(ings.map(ing=>calcFood(ing.key,ing.amount,db)));
 const addIng=key=>{const food=db[key];setIngs(p=>[...p,{key,amount:food.unit==="pcs"?1:100}]);setSearch("");setShowPick(false);};
 const saveNewFood=()=>{
 if(!newFood.name.trim()) return;
 const key=newFood.name.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"")+`_${genUid()}`;
-onAddFood(key,{cal:newFood.cal,p:newFood.p,f:newFood.f,c:newFood.c,unit:newFood.unit,label:"custom"});
+onAddFood(key,{p:newFood.p,f:newFood.f,c:newFood.c,unit:newFood.unit,label:"custom",cat:"other",displayName:newFood.name.trim()});
 setIngs(p=>[...p,{key,amount:newFood.unit==="pcs"?1:100}]);
 setNewFood(null);setShowPick(false);
 };
@@ -558,7 +565,7 @@ const food=db[ing.key]; if(!food) return null;
 const m=calcFood(ing.key,ing.amount,db);
 const step=food.unit==="pcs"?1:food.unit==="ml"?50:5;
 return <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 100px auto",gap:8,padding:"6px 0",borderBottom:`1px solid #0f172a`,alignItems:"center"}}>
-<div><div style={{fontSize:12,color:C.text}}>{getFoodName(ing.key,t)}</div><div style={{fontSize:10,color:C.muted}}>{m.cal} cal P:{m.p}g F:{m.f}g C:{m.c}g</div></div>
+<div><div style={{fontSize:12,color:C.text}}>{getFoodName(ing.key,t,db)}</div><div style={{fontSize:10,color:C.muted}}>{m.cal} cal P:{m.p}g F:{m.f}g C:{m.c}g</div></div>
 <div style={{display:"flex",gap:4,alignItems:"center"}}>
 <input type="number" value={ing.amount} min={0} step={step} onChange={e=>setIngs(p=>{const n=[...p];n[i]={...n[i],amount:Math.max(0,Number(e.target.value))};return n;})} style={{width:58,background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:13,fontWeight:700,padding:"4px 5px",textAlign:"center",outline:"none"}}/>
 <span style={{fontSize:11,color:C.muted}}>{food.unit}</span>
@@ -572,21 +579,25 @@ return <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 100px auto",
 <Inp value={search} onChange={setSearch} placeholder={rt.addIngredient+"…"}/>
 <div style={{maxHeight:150,overflowY:"auto",display:"grid",gap:4,marginTop:8}}>
 {filtered.slice(0,20).map(k=>(
-<button key={k} onClick={()=>addIng(k)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:12,padding:"6px 10px",cursor:"pointer",textAlign:"left"}}>{getFoodName(k,t)}</button>
+<button key={k} onClick={()=>addIng(k)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,fontSize:12,padding:"6px 10px",cursor:"pointer",textAlign:"left"}}>{getFoodName(k,t,db)}</button>
 ))}
 </div>
-<button onClick={()=>setNewFood({name:"",cal:0,p:0,f:0,c:0,unit:"g"})} style={{...btnStyle(C.amber,false),marginTop:8,width:"100%",textAlign:"center"}}>{rt.addNewFood}</button>
+<button onClick={()=>setNewFood({name:"",p:0,f:0,c:0,unit:"g"})} style={{...btnStyle(C.amber,false),marginTop:8,width:"100%",textAlign:"center"}}>{rt.addNewFood}</button>
 </div>
 )}
 {newFood&&(
 <div style={{background:C.inputBg,border:`1px solid ${C.amber}44`,borderRadius:10,padding:12,display:"grid",gap:8}}>
 <div style={{fontSize:12,fontWeight:700,color:C.amber}}>{rt.newFood}</div>
 <Inp value={newFood.name} onChange={v=>setNewFood(p=>({...p,name:v}))} placeholder={rt.foodName}/>
-<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
-{[["KCAL","cal"],["P g","p"],["F g","f"],["C g","c"]].map(([l,k])=>(
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+{[["P g","p"],["F g","f"],["C g","c"]].map(([l,k])=>(
 <div key={k}><div style={{fontSize:10,color:C.muted,marginBottom:3}}>{l}</div>
-<NumInp value={newFood[k]} onChange={v=>setNewFood(p=>({...p,[k]:v}))} style={{width:"100%"}}/></div>
+<NumInp value={newFood[k]} onChange={v=>setNewFood(p=>({...p,[k]:v}))} step={0.1} style={{width:"100%"}}/></div>
 ))}
+</div>
+<div style={{background:C.inputBg,borderRadius:6,padding:"6px 10px",display:"flex",justifyContent:"space-between"}}>
+<span style={{fontSize:11,color:C.muted}}>KCAL (auto)</span>
+<span style={{fontSize:14,fontWeight:800,color:C.text}}>{macrosToCal(newFood.p,newFood.f,newFood.c)}</span>
 </div>
 <select value={newFood.unit} onChange={e=>setNewFood(p=>({...p,unit:e.target.value}))} style={{background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"6px 8px",fontSize:12}}>
 <option value="g">per 100g</option><option value="ml">per 100ml</option><option value="pcs">per piece</option>
@@ -694,7 +705,7 @@ const restAmt=restMeals.flat().filter(i=>i.key===key).reduce((s,i)=>s+i.amount,0
 +(restMealRecs||[]).flat().reduce((s,mr)=>{ const r=recipes.find(x=>x.id===mr.id); if(!r) return s; return s+r.ingredients.filter(i=>i.key===key).reduce((ss,i)=>ss+i.amount*mr.scale,0); },0);
 const weekly=Math.round(gymAmt*gymDays+restAmt*restDays);
 if(weekly===0) return null;
-return { key, name:getFoodName(key,t), unit:food.unit, gymAmt:Math.round(gymAmt), restAmt:Math.round(restAmt), weekly };
+return { key, name:getFoodName(key,t,db), unit:food.unit, gymAmt:Math.round(gymAmt), restAmt:Math.round(restAmt), weekly };
 }).filter(Boolean).sort((a,b)=>b.weekly-a.weekly);
 return (
 <div style={{display:"grid",gap:12}}>
@@ -723,21 +734,40 @@ return (
 
 const FoodTab = ({ db, onUpdateFood, onResetFood, onResetAllFoods, onAddFood, onDeleteFood, t }) => {
 const ft=t.food;
+const isUk = !!t.foodNames.rice && t.foodNames.rice.includes('и');
 const [search,setSearch]=useState("");
+const [filterCat,setFilterCat]=useState("all");
 const [showAdd,setShowAdd]=useState(false);
-const EMPTY_FOOD = {name:"",cal:0,p:0,f:0,c:0,unit:"g",gPerPc:100};
+const EMPTY_FOOD = {name:"",p:0,f:0,c:0,unit:"g",gPerPc:100,cat:""};
 const [newFood,setNewFood]=useState(EMPTY_FOOD);
 const updNew=(k,v)=>setNewFood(p=>({...p,[k]:v}));
-const keys=Object.keys(db).filter(k=>(getFoodName(k,t)).toLowerCase().includes(search.toLowerCase()));
+
+// collect all categories including custom ones from db
+const allCats = ["all",...Array.from(new Set(Object.values(db).map(f=>f.cat).filter(Boolean)))];
+const catLabels = isUk
+  ? {all:"Всі",grains:"Крупи",protein:"Білки",dairy:"Молочні",fats:"Жири",vegetables:"Овочі",fruits:"Фрукти",other:"Інше"}
+  : {all:"All",grains:"Grains",protein:"Protein",dairy:"Dairy",fats:"Fats",vegetables:"Vegetables",fruits:"Fruits",other:"Other"};
+
+const keys=Object.keys(db).filter(k=>{
+  const food=db[k];
+  const name=(food.displayName||getFoodName(k,t,db)).toLowerCase();
+  const matchSearch=name.includes(search.toLowerCase());
+  const matchCat=filterCat==="all"||food.cat===filterCat;
+  return matchSearch&&matchCat;
+});
+
 const handleAdd=()=>{
   if(!newFood.name.trim()) return;
   const key=newFood.name.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"")+`_${genUid()}`;
-  const food={cal:newFood.cal,p:newFood.p,f:newFood.f,c:newFood.c,unit:newFood.unit,label:"custom"};
+  const food={p:newFood.p,f:newFood.f,c:newFood.c,unit:newFood.unit,label:"custom",cat:newFood.cat||"other",displayName:newFood.name.trim()};
   if(newFood.unit==="pcs") food.gPerPc=newFood.gPerPc;
-  onAddFood(key,{...food,displayName:newFood.name.trim()});
+  onAddFood(key,food);
   setNewFood(EMPTY_FOOD);
   setShowAdd(false);
 };
+
+const newCalPreview = macrosToCal(newFood.p,newFood.f,newFood.c);
+
 return (
 <div style={{display:"grid",gap:10}}>
 <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -745,52 +775,91 @@ return (
 <button onClick={()=>setShowAdd(v=>!v)} style={btnStyle(C.green,false)}>{showAdd?"✕":ft.addNew}</button>
 <button onClick={onResetAllFoods} style={btnStyle(C.amber,false)}>{ft.resetAll}</button>
 </div>
+
+{/* Category filter */}
+<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+{allCats.map(cat=>(
+<button key={cat} onClick={()=>setFilterCat(cat)}
+  style={{...btnStyle(filterCat===cat?C.blue:C.muted,true),fontSize:11,padding:"3px 8px"}}>
+  {catLabels[cat]||cat}
+</button>
+))}
+</div>
+
+{/* Add new food form */}
 {showAdd&&(
 <div style={{background:C.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.green}44`,display:"grid",gap:10}}>
 <Inp value={newFood.name} onChange={v=>updNew("name",v)} placeholder={ft.foodName}/>
-<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-{[[ft.kcal,"cal",1],[ft.proteinG,"p",0.1],[ft.fatG,"f",0.1],[ft.carbsG,"c",0.1]].map(([l,k,st])=>(
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+{[[ft.proteinG,"p",0.1],[ft.fatG,"f",0.1],[ft.carbsG,"c",0.1]].map(([l,k,st])=>(
 <div key={k}>
 <div style={{fontSize:9,color:C.muted,marginBottom:3,fontWeight:700,letterSpacing:0.5}}>{l}</div>
 <NumInp value={newFood[k]} onChange={v=>updNew(k,v)} step={st} style={{width:"100%"}}/>
 </div>
 ))}
 </div>
-<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-<div style={{fontSize:11,color:C.muted,flexShrink:0}}>{ft.perUnit?.(newFood.unit)||""}:</div>
+<div style={{background:C.inputBg,borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+<span style={{fontSize:11,color:C.muted}}>{ft.kcal} (auto)</span>
+<span style={{fontSize:16,fontWeight:800,color:C.text}}>{newCalPreview} kcal</span>
+</div>
+<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+<span style={{fontSize:11,color:C.muted}}>{isUk?"Одиниця:":"Unit:"}</span>
 {[["g",ft.unitG],["ml",ft.unitMl],["pcs",ft.unitPcs]].map(([u,l])=>(
 <button key={u} onClick={()=>updNew("unit",u)} style={{...btnStyle(newFood.unit===u?C.blue:C.muted,false),fontSize:11}}>{l}</button>
 ))}
 {newFood.unit==="pcs"&&(
-<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:4}}>
+<div style={{display:"flex",alignItems:"center",gap:6}}>
 <span style={{fontSize:11,color:C.muted}}>{ft.gPerPc}:</span>
 <NumInp value={newFood.gPerPc} onChange={v=>updNew("gPerPc",v)} min={1} style={{width:60}}/>
 </div>
 )}
-<button onClick={handleAdd} style={{...btnStyle(C.green,false),marginLeft:"auto"}}>{ft.addBtn}</button>
 </div>
+<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+<span style={{fontSize:11,color:C.muted}}>{isUk?"Категорія:":"Category:"}</span>
+{Object.entries(catLabels).filter(([k])=>k!=="all").map(([k,l])=>(
+<button key={k} onClick={()=>updNew("cat",k)}
+  style={{...btnStyle(newFood.cat===k?C.teal:C.muted,true),fontSize:11,padding:"3px 8px"}}>
+  {l}
+</button>
+))}
+</div>
+<button onClick={handleAdd} style={{...btnStyle(C.green,false),textAlign:"center"}}>{ft.addBtn}</button>
 </div>
 )}
+
+{/* Food list */}
 {keys.map(key=>{
 const food=db[key]; const orig=ORIGINAL_DB[key];
-const isCustom=!orig, isModified=orig&&(food.cal!==orig.cal||food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
-const displayName=food.displayName||getFoodName(key,t);
+const isCustom=!orig, isModified=orig&&(food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
+const calPer100=macrosToCal(food.p,food.f,food.c);
+const displayName=food.displayName||getFoodName(key,t,db);
 return (
 <div key={key} style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isCustom?C.purple+"44":isModified?C.amber+"44":C.border}`}}>
-<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-<div style={{fontSize:13,fontWeight:700,color:isCustom?C.purple:isModified?C.amber:C.text}}>{displayName}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}</div>
-<div style={{display:"flex",gap:6,alignItems:"center"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+<div>
+<div style={{fontSize:13,fontWeight:700,color:isCustom?C.purple:isModified?C.amber:C.text}}>
+{displayName}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}
+</div>
+<div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
+{food.cat&&<span style={{fontSize:10,color:C.teal,background:C.teal+"18",borderRadius:4,padding:"1px 6px"}}>{catLabels[food.cat]||food.cat}</span>}
 <span style={{fontSize:10,color:C.muted}}>{ft.perUnit(food.unit)}</span>
+</div>
+</div>
+<div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
 {isCustom&&<span style={{...btnStyle(C.purple),cursor:"default"}}>{ft.custom}</span>}
 {isModified&&<button onClick={()=>onResetFood(key)} style={btnStyle(C.amber)}>{ft.original}</button>}
 {isCustom&&<button onClick={()=>onDeleteFood(key)} style={btnStyle(C.red)}>{ft.deleteCustom}</button>}
 </div>
 </div>
-<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-{[[ft.kcal,"cal"],[ft.proteinG,"p"],[ft.fatG,"f"],[ft.carbsG,"c"]].map(([l,k])=>(
+<div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr",gap:6,alignItems:"end"}}>
+<div style={{background:C.inputBg,borderRadius:6,padding:"6px 10px",textAlign:"center"}}>
+<div style={{fontSize:9,color:C.muted,marginBottom:2,fontWeight:700}}>{ft.kcal}</div>
+<div style={{fontSize:15,fontWeight:800,color:C.text}}>{calPer100}</div>
+</div>
+{[[ft.proteinG,"p"],[ft.fatG,"f"],[ft.carbsG,"c"]].map(([l,k])=>(
 <div key={k}>
 <div style={{fontSize:9,color:C.muted,marginBottom:3,fontWeight:700,letterSpacing:0.5}}>{l}</div>
-<NumInp value={food[k]} onChange={v=>onUpdateFood(key,k,v)} step={k==="cal"?1:0.1} style={{width:"100%"}}/>
+<NumInp value={food[k]} onChange={v=>onUpdateFood(key,k,v)} step={0.1} style={{width:"100%"}}/>
 </div>
 ))}
 </div>
@@ -1130,7 +1199,7 @@ const saveRecipe=recipe=>{ setRecipes(p=>{ const idx=p.findIndex(r=>r.id===recip
 const deleteRecipe=id=>setRecipes(p=>p.filter(r=>r.id!==id));
 const addFoodToDb=(key,food)=>setDb(d=>({...d,[key]:{...food,name:key}}));
 const updateFood=(key,field,val)=>setDb(d=>({...d,[key]:{...d[key],[field]:val}}));
-const resetFood=key=>{ if(!ORIGINAL_DB[key]) return; setDb(d=>({...d,[key]:{...ORIGINAL_DB[key]}})); setToast(t.resetFoodToast(getFoodName(key,t))); };
+const resetFood=key=>{ if(!ORIGINAL_DB[key]) return; setDb(d=>({...d,[key]:{...ORIGINAL_DB[key]}})); setToast(t.resetFoodToast(getFoodName(key,t,db))); };
 const resetAllFoods=()=>{ setDb(DB_FACTORY()); setToast(t.resetAllFoodsToast); };
 const deleteFood=key=>{ if(ORIGINAL_DB[key]) return; setDb(d=>{ const n={...d}; delete n[key]; return n; }); };
 
