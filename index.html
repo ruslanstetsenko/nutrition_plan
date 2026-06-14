@@ -857,7 +857,58 @@ return (
 );
 };
 
-const FoodTab = ({ db, onUpdateFood, onResetFood, onResetAllFoods, onAddFood, onDeleteFood, t }) => {
+const FoodCard = ({ foodKey, food, orig, db, catLabels, isUk, ft, onUpdateFood, onResetFood, onDeleteFood }) => {
+const [editCat,setEditCat]=useState(false);
+const isCustom=!orig, isModified=orig&&(food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
+const calPer100=macrosToCal(food.p,food.f,food.c);
+const displayName=food.displayName||foodKey;
+return (
+<div style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isCustom?C.purple+"44":isModified?C.amber+"44":C.border}`}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontSize:13,fontWeight:700,color:isCustom?C.purple:isModified?C.amber:C.text}}>
+{displayName}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}
+</div>
+<div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+{!editCat
+  ? <span onClick={()=>setEditCat(true)} title={isUk?"Змінити категорію":"Change category"}
+      style={{fontSize:10,color:C.teal,background:C.teal+"18",borderRadius:4,padding:"2px 7px",cursor:"pointer",border:`1px solid ${C.teal}33`}}>
+      {food.cat?catLabels[food.cat]||food.cat:(isUk?"+ категорія":"+ category")}
+    </span>
+  : <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+      {Object.entries(catLabels).filter(([k])=>k!=="all").map(([k,l])=>(
+        <button key={k} onClick={()=>{ onUpdateFood(foodKey,"cat",k); setEditCat(false); }}
+          style={{...btnStyle(food.cat===k?C.teal:C.muted,true),fontSize:10,padding:"2px 7px"}}>
+          {l}
+        </button>
+      ))}
+      <button onClick={()=>setEditCat(false)} style={{...btnStyle(C.muted,true),fontSize:10,padding:"2px 6px"}}>✕</button>
+    </div>
+}
+<span style={{fontSize:10,color:C.muted}}>{ft.perUnit(food.unit)}</span>
+</div>
+</div>
+<div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+{isCustom&&<span style={{...btnStyle(C.purple),cursor:"default"}}>{ft.custom}</span>}
+{isModified&&<button onClick={()=>onResetFood(foodKey)} style={btnStyle(C.amber)}>{ft.original}</button>}
+{isCustom&&<button onClick={()=>onDeleteFood(foodKey)} style={btnStyle(C.red)}>{ft.deleteCustom}</button>}
+</div>
+</div>
+<div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr",gap:6,alignItems:"end"}}>
+<div style={{background:C.inputBg,borderRadius:6,padding:"6px 10px",textAlign:"center"}}>
+<div style={{fontSize:9,color:C.muted,marginBottom:2,fontWeight:700}}>{ft.kcal}</div>
+<div style={{fontSize:15,fontWeight:800,color:C.text}}>{calPer100}</div>
+</div>
+{[[ft.proteinG,"p"],[ft.fatG,"f"],[ft.carbsG,"c"]].map(([l,k])=>(
+<div key={k}>
+<div style={{fontSize:9,color:C.muted,marginBottom:3,fontWeight:700,letterSpacing:0.5}}>{l}</div>
+<NumInp value={food[k]} onChange={v=>onUpdateFood(foodKey,k,v)} step={0.1} style={{width:"100%"}}/>
+</div>
+))}
+</div>
+</div>
+);
+};
 const ft=t.food;
 const isUk = !!t.foodNames.rice && t.foodNames.rice.includes('и');
 const [search,setSearch]=useState("");
@@ -955,56 +1006,7 @@ return (
 {/* Food list */}
 {keys.map(key=>{
 const food=db[key]; const orig=ORIGINAL_DB[key];
-const isCustom=!orig, isModified=orig&&(food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
-const calPer100=macrosToCal(food.p,food.f,food.c);
-const displayName=food.displayName||getFoodName(key,t,db);
-const [editCat,setEditCat]=useState(false);
-return (
-<div key={key} style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isCustom?C.purple+"44":isModified?C.amber+"44":C.border}`}}>
-<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-<div style={{flex:1,minWidth:0}}>
-<div style={{fontSize:13,fontWeight:700,color:isCustom?C.purple:isModified?C.amber:C.text}}>
-{displayName}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}
-</div>
-<div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
-{!editCat
-  ? <span onClick={()=>setEditCat(true)} title={isUk?"Змінити категорію":"Change category"}
-      style={{fontSize:10,color:C.teal,background:C.teal+"18",borderRadius:4,padding:"2px 7px",cursor:"pointer",border:`1px solid ${C.teal}33`}}>
-      {food.cat?catLabels[food.cat]||food.cat:(isUk?"+ категорія":"+ category")}
-    </span>
-  : <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-      {Object.entries(catLabels).filter(([k])=>k!=="all").map(([k,l])=>(
-        <button key={k} onClick={()=>{ onUpdateFood(key,"cat",k); setEditCat(false); }}
-          style={{...btnStyle(food.cat===k?C.teal:C.muted,true),fontSize:10,padding:"2px 7px"}}>
-          {l}
-        </button>
-      ))}
-      <button onClick={()=>setEditCat(false)} style={{...btnStyle(C.muted,true),fontSize:10,padding:"2px 6px"}}>✕</button>
-    </div>
-}
-<span style={{fontSize:10,color:C.muted}}>{ft.perUnit(food.unit)}</span>
-</div>
-</div>
-<div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-{isCustom&&<span style={{...btnStyle(C.purple),cursor:"default"}}>{ft.custom}</span>}
-{isModified&&<button onClick={()=>onResetFood(key)} style={btnStyle(C.amber)}>{ft.original}</button>}
-{isCustom&&<button onClick={()=>onDeleteFood(key)} style={btnStyle(C.red)}>{ft.deleteCustom}</button>}
-</div>
-</div>
-<div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr",gap:6,alignItems:"end"}}>
-<div style={{background:C.inputBg,borderRadius:6,padding:"6px 10px",textAlign:"center"}}>
-<div style={{fontSize:9,color:C.muted,marginBottom:2,fontWeight:700}}>{ft.kcal}</div>
-<div style={{fontSize:15,fontWeight:800,color:C.text}}>{calPer100}</div>
-</div>
-{[[ft.proteinG,"p"],[ft.fatG,"f"],[ft.carbsG,"c"]].map(([l,k])=>(
-<div key={k}>
-<div style={{fontSize:9,color:C.muted,marginBottom:3,fontWeight:700,letterSpacing:0.5}}>{l}</div>
-<NumInp value={food[k]} onChange={v=>onUpdateFood(key,k,v)} step={0.1} style={{width:"100%"}}/>
-</div>
-))}
-</div>
-</div>
-);
+return <FoodCard key={key} foodKey={key} food={food} orig={orig} db={db} catLabels={catLabels} isUk={isUk} ft={ft} onUpdateFood={onUpdateFood} onResetFood={onResetFood} onDeleteFood={onDeleteFood}/>;
 })}
 </div>
 );
