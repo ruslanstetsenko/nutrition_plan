@@ -50,22 +50,27 @@ const PROFILES_KEY = 'nutrition-profiles-v1';
 const ACTIVE_KEY = 'nutrition-active-profile';
 const LANG_KEY = 'nutrition-lang';
 function exportData() {
-const data = { _exported: new Date().toISOString(), profiles: {} };
+const activeId = localStorage.getItem(ACTIVE_KEY) || 'default';
 const pl = localStorage.getItem(PROFILES_KEY);
-if (pl) data[PROFILES_KEY] = JSON.parse(pl);
 const profiles = pl ? JSON.parse(pl) : [];
-profiles.forEach(pr => {
-const sk = skFor(pr.id);
-data.profiles[pr.id] = {};
+const activeProfile = profiles.find(p => p.id === activeId) || profiles[0];
+if (!activeProfile) return;
+const sk = skFor(activeProfile.id);
+const profileData = {};
 Object.entries(sk).forEach(([k,v]) => {
 const val = localStorage.getItem(v);
-if (val) data.profiles[pr.id][k] = JSON.parse(val);
+if (val) profileData[k] = JSON.parse(val);
 });
-});
+const data = {
+_exported: new Date().toISOString(),
+_profile: activeProfile,
+[PROFILES_KEY]: [activeProfile],
+profiles: { [activeProfile.id]: profileData }
+};
 const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
 const url = URL.createObjectURL(blob);
 const a = document.createElement('a');
-a.href = url; a.download = `nutrition-plan-${new Date().toISOString().slice(0,10)}.json`;
+a.href = url; a.download = `nutrition-${activeProfile.name}-${new Date().toISOString().slice(0,10)}.json`;
 a.click(); URL.revokeObjectURL(url);
 }
 document.getElementById('import-input').addEventListener('change', function(e) {
@@ -74,16 +79,26 @@ const reader = new FileReader();
 reader.onload = function(ev) {
 try {
 const data = JSON.parse(ev.target.result);
-if (data[PROFILES_KEY]) localStorage.setItem(PROFILES_KEY, JSON.stringify(data[PROFILES_KEY]));
-if (data.profiles) {
-Object.entries(data.profiles).forEach(([pid, pdata]) => {
+if (!data.profiles || !data._profile) { alert('Invalid file: missing profile data'); return; }
+const importedProfile = data._profile;
+const pid = importedProfile.id;
+// merge into existing profiles list
+const existing = JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]');
+const idx = existing.findIndex(p => p.id === pid);
+if (idx >= 0) existing[idx] = importedProfile;
+else existing.push(importedProfile);
+localStorage.setItem(PROFILES_KEY, JSON.stringify(existing));
+// write profile data
+const profileData = data.profiles[pid];
+if (profileData) {
 const sk = skFor(pid);
 Object.entries(sk).forEach(([k,v]) => {
-if (pdata[k]) localStorage.setItem(v, JSON.stringify(pdata[k]));
-});
+if (profileData[k] !== undefined) localStorage.setItem(v, JSON.stringify(profileData[k]));
 });
 }
-alert('Import successful! Reloading…');
+// switch to imported profile
+localStorage.setItem(ACTIVE_KEY, pid);
+alert(`Profile "${importedProfile.name}" imported! Reloading…`);
 location.reload();
 } catch(err) { alert('Invalid file: ' + err.message); }
 };
