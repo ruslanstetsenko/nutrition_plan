@@ -131,7 +131,7 @@ scale: "×",
 recipes: { title:"🍳 Recipes", hint:"Create composite recipes. Add them to any meal. Saved permanently.", newBtn:"+ New Recipe", noRecipes:"No recipes yet.", edit:"✏️ Edit", delete:"🗑️ Delete", newTitle:"New recipe", editTitle:"Edit recipe", ingredients:"INGREDIENTS", noIngredients:"No ingredients yet.", recipeTotal:"RECIPE TOTAL", addIngredient:"+ Add ingredient", addNewFood:"+ Add new food to database", saveRecipe:"💾 Save recipe", cancel:"Cancel", newFood:"New food (per 100g/ml)", foodName:"Food name…", addToDb:"✓ Add to DB & recipe" },
 supps: { hint:"Science-backed for men 40+ · Take every day" },
 shop: { daysPerWeek:"DAYS PER WEEK", gymDays:"🏋️ Gym days", restDays:"🛋️ Rest days", total:"Total:", adjustWeek:"· adjust to cover full week", hint:(g,r)=>`📦 Weekly quantities · ${g} gym + ${r} rest · All weights uncooked/raw`, item:"ITEM", gymDay:"GYM/day", restDay:"REST/day", weekly:"WEEKLY" },
-food: { hint:"Edit macros per 100g/ml. Changes apply instantly and are saved permanently.", searchFood:"🔍 Search food…", resetAll:"↺ reset all", perUnit:(u)=>`per 100${u==="ml"?"ml":"g"}`, custom:"✏️ custom", original:"↺ original", kcal:"KCAL", proteinG:"PROTEIN g", fatG:"FAT g", carbsG:"CARBS g" },
+food: { hint:"Edit macros per 100g/ml. Changes apply instantly and are saved permanently.", searchFood:"🔍 Search food…", resetAll:"↺ reset all", perUnit:(u)=>`per 100${u==="ml"?"ml":"g"}`, custom:"✏️ custom", original:"↺ original", kcal:"KCAL", proteinG:"PROTEIN g", fatG:"FAT g", carbsG:"CARBS g", addNew:"+ New food", foodName:"Food name…", unitG:"per 100g", unitMl:"per 100ml", unitPcs:"per piece", gPerPc:"g per piece", addBtn:"✓ Add", deleteCustom:"🗑 delete" },
 profiles: { title:"Profiles", select:"Select profile", newProfile:"+ New profile", editName:"Profile name", create:"Create", cancel:"Cancel", delete:"Delete", switchTo:"Switch", active:"active", confirmDelete:"Delete profile" },
 foodNames: { rice:"White rice", banana:"Banana", eggs:"Eggs", greek_yogurt:"Greek yogurt", nuts:"Nuts (mixed)", pork_chop:"Pork chop", fish:"Fish / Salmon", olive_oil:"Olive oil", veg:"Vegetables", milk:"Milk", sugar:"Sugar", cottage:"Cottage cheese", kefir:"Kefir", protein_pwd:"Protein powder", sweet_potato:"Sweet potato", potatoes:"Potatoes" },
 added: "+added",
@@ -169,7 +169,7 @@ scale: "×",
 recipes: { title:"🍳 Рецепти", hint:"Створюйте складені рецепти з продуктів бази. Зберігаються постійно.", newBtn:"+ Новий рецепт", noRecipes:"Рецептів ще немає.", edit:"✏️ Редагувати", delete:"🗑️ Видалити", newTitle:"Новий рецепт", editTitle:"Редагувати рецепт", ingredients:"ІНГРЕДІЄНТИ", noIngredients:"Інгредієнтів ще немає.", recipeTotal:"ВСЬОГО В РЕЦЕПТІ", addIngredient:"+ Додати інгредієнт", addNewFood:"+ Додати новий продукт до бази", saveRecipe:"💾 Зберегти рецепт", cancel:"Скасувати", newFood:"Новий продукт (на 100г/мл)", foodName:"Назва продукту…", addToDb:"✓ Додати до бази і рецепту" },
 supps: { hint:"Науково підтверджено для чоловіків 40+ · Приймати щодня" },
 shop: { daysPerWeek:"ДНІВ НА ТИЖДЕНЬ", gymDays:"🏋️ Дні тренувань", restDays:"🛋️ Дні відпочинку", total:"Разом:", adjustWeek:"· виставте 7 днів", hint:(g,r)=>`📦 Кількість на тиждень · ${g} трен + ${r} відп · Всі ваги сирі`, item:"ПРОДУКТ", gymDay:"ТРЕН/день", restDay:"ВІДП/день", weekly:"ТИЖДЕНЬ" },
-food: { hint:"Редагуйте БЖВ на 100г/мл. Зміни застосовуються одразу і зберігаються постійно.", searchFood:"🔍 Пошук продукту…", resetAll:"↺ скинути все", perUnit:(u)=>`на 100${u==="ml"?"мл":"г"}`, custom:"✏️ кастом", original:"↺ оригінал", kcal:"ККАЛ", proteinG:"БІЛОК г", fatG:"ЖИР г", carbsG:"ВУГЛ г" },
+food: { hint:"Редагуйте БЖВ на 100г/мл. Зміни застосовуються одразу і зберігаються постійно.", searchFood:"🔍 Пошук продукту…", resetAll:"↺ скинути все", perUnit:(u)=>`на 100${u==="ml"?"мл":"г"}`, custom:"✏️ кастом", original:"↺ оригінал", kcal:"ККАЛ", proteinG:"БІЛОК г", fatG:"ЖИР г", carbsG:"ВУГЛ г", addNew:"+ Новий продукт", foodName:"Назва продукту…", unitG:"на 100г", unitMl:"на 100мл", unitPcs:"за штуку", gPerPc:"г за штуку", addBtn:"✓ Додати", deleteCustom:"🗑 видалити" },
 profiles: { title:"Профілі", select:"Оберіть профіль", newProfile:"+ Новий профіль", editName:"Назва профілю", create:"Створити", cancel:"Скасувати", delete:"Видалити", switchTo:"Обрати", active:"активний", confirmDelete:"Видалити профіль" },
 foodNames: { rice:"Рис білий", banana:"Банан", eggs:"Яйця", greek_yogurt:"Грецький йогурт", nuts:"Горіхи (мікс)", pork_chop:"Свинина (биток)", fish:"Риба / Лосось", olive_oil:"Оливкова олія", veg:"Овочі", milk:"Молоко", sugar:"Цукор", cottage:"Сир кисломолочний", kefir:"Кефір", protein_pwd:"Протеїн", sweet_potato:"Солодка картопля", potatoes:"Картопля" },
 added: "+додано",
@@ -721,28 +721,69 @@ return (
 );
 };
 
-const FoodTab = ({ db, onUpdateFood, onResetFood, onResetAllFoods, t }) => {
+const FoodTab = ({ db, onUpdateFood, onResetFood, onResetAllFoods, onAddFood, onDeleteFood, t }) => {
 const ft=t.food;
 const [search,setSearch]=useState("");
+const [showAdd,setShowAdd]=useState(false);
+const EMPTY_FOOD = {name:"",cal:0,p:0,f:0,c:0,unit:"g",gPerPc:100};
+const [newFood,setNewFood]=useState(EMPTY_FOOD);
+const updNew=(k,v)=>setNewFood(p=>({...p,[k]:v}));
 const keys=Object.keys(db).filter(k=>(getFoodName(k,t)).toLowerCase().includes(search.toLowerCase()));
+const handleAdd=()=>{
+  if(!newFood.name.trim()) return;
+  const key=newFood.name.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"")+`_${genUid()}`;
+  const food={cal:newFood.cal,p:newFood.p,f:newFood.f,c:newFood.c,unit:newFood.unit,label:"custom"};
+  if(newFood.unit==="pcs") food.gPerPc=newFood.gPerPc;
+  onAddFood(key,{...food,displayName:newFood.name.trim()});
+  setNewFood(EMPTY_FOOD);
+  setShowAdd(false);
+};
 return (
 <div style={{display:"grid",gap:10}}>
-<div style={{fontSize:11,color:C.muted,padding:"2px 0 4px"}}>{ft.hint}</div>
 <div style={{display:"flex",gap:8,alignItems:"center"}}>
 <Inp value={search} onChange={setSearch} placeholder={ft.searchFood} style={{flex:1}}/>
+<button onClick={()=>setShowAdd(v=>!v)} style={btnStyle(C.green,false)}>{showAdd?"✕":ft.addNew}</button>
 <button onClick={onResetAllFoods} style={btnStyle(C.amber,false)}>{ft.resetAll}</button>
 </div>
+{showAdd&&(
+<div style={{background:C.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.green}44`,display:"grid",gap:10}}>
+<Inp value={newFood.name} onChange={v=>updNew("name",v)} placeholder={ft.foodName}/>
+<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+{[[ft.kcal,"cal",1],[ft.proteinG,"p",0.1],[ft.fatG,"f",0.1],[ft.carbsG,"c",0.1]].map(([l,k,st])=>(
+<div key={k}>
+<div style={{fontSize:9,color:C.muted,marginBottom:3,fontWeight:700,letterSpacing:0.5}}>{l}</div>
+<NumInp value={newFood[k]} onChange={v=>updNew(k,v)} step={st} style={{width:"100%"}}/>
+</div>
+))}
+</div>
+<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+<div style={{fontSize:11,color:C.muted,flexShrink:0}}>{ft.perUnit?.(newFood.unit)||""}:</div>
+{[["g",ft.unitG],["ml",ft.unitMl],["pcs",ft.unitPcs]].map(([u,l])=>(
+<button key={u} onClick={()=>updNew("unit",u)} style={{...btnStyle(newFood.unit===u?C.blue:C.muted,false),fontSize:11}}>{l}</button>
+))}
+{newFood.unit==="pcs"&&(
+<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:4}}>
+<span style={{fontSize:11,color:C.muted}}>{ft.gPerPc}:</span>
+<NumInp value={newFood.gPerPc} onChange={v=>updNew("gPerPc",v)} min={1} style={{width:60}}/>
+</div>
+)}
+<button onClick={handleAdd} style={{...btnStyle(C.green,false),marginLeft:"auto"}}>{ft.addBtn}</button>
+</div>
+</div>
+)}
 {keys.map(key=>{
 const food=db[key]; const orig=ORIGINAL_DB[key];
 const isCustom=!orig, isModified=orig&&(food.cal!==orig.cal||food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
+const displayName=food.displayName||getFoodName(key,t);
 return (
-<div key={key} style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isModified?C.amber+"44":C.border}`}}>
+<div key={key} style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isCustom?C.purple+"44":isModified?C.amber+"44":C.border}`}}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-<div style={{fontSize:13,fontWeight:700,color:isModified?C.amber:C.text}}>{getFoodName(key,t)}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}</div>
+<div style={{fontSize:13,fontWeight:700,color:isCustom?C.purple:isModified?C.amber:C.text}}>{displayName}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}</div>
 <div style={{display:"flex",gap:6,alignItems:"center"}}>
 <span style={{fontSize:10,color:C.muted}}>{ft.perUnit(food.unit)}</span>
 {isCustom&&<span style={{...btnStyle(C.purple),cursor:"default"}}>{ft.custom}</span>}
 {isModified&&<button onClick={()=>onResetFood(key)} style={btnStyle(C.amber)}>{ft.original}</button>}
+{isCustom&&<button onClick={()=>onDeleteFood(key)} style={btnStyle(C.red)}>{ft.deleteCustom}</button>}
 </div>
 </div>
 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
@@ -1091,6 +1132,7 @@ const addFoodToDb=(key,food)=>setDb(d=>({...d,[key]:{...food,name:key}}));
 const updateFood=(key,field,val)=>setDb(d=>({...d,[key]:{...d[key],[field]:val}}));
 const resetFood=key=>{ if(!ORIGINAL_DB[key]) return; setDb(d=>({...d,[key]:{...ORIGINAL_DB[key]}})); setToast(t.resetFoodToast(getFoodName(key,t))); };
 const resetAllFoods=()=>{ setDb(DB_FACTORY()); setToast(t.resetAllFoodsToast); };
+const deleteFood=key=>{ if(ORIGINAL_DB[key]) return; setDb(d=>{ const n={...d}; delete n[key]; return n; }); };
 
 const gymKeys=GYM_META_KEYS;
 const restKeys=REST_META_KEYS;
@@ -1114,7 +1156,7 @@ return (
 <button onClick={()=>setShowProfiles(true)} style={{...btnStyle(C.blue,false),fontSize:11}}>👤 {activeProfile?.name}</button>
 <button onClick={()=>{ const nl=lang==="en"?"uk":"en"; setLang(nl); }} style={{...btnStyle(C.muted,false),fontSize:11}}>{lang==="en"?"🇺🇦 UA":"🇬🇧 EN"}</button>
 </div>
-<div style={{fontSize:11,color:C.green,marginTop:6,fontWeight:600}}>{t.recomp}</div>
+
 </div>
 <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4}}>
 {tabs.map(tb=>(
@@ -1146,7 +1188,7 @@ return (
 )}
 {tab==="supp"&&<SuppsTab t={t}/>}
 {tab==="shop"&&<ShopTab gymMeals={meals.gym} restMeals={meals.rest} gymMealRecs={mealRecs.gym||[]} restMealRecs={mealRecs.rest||[]} recipes={recipes} db={db} t={t}/>}
-{tab==="food"&&<FoodTab db={db} onUpdateFood={updateFood} onResetFood={resetFood} onResetAllFoods={resetAllFoods} t={t}/>}
+{tab==="food"&&<FoodTab db={db} onUpdateFood={updateFood} onResetFood={resetFood} onResetAllFoods={resetAllFoods} onAddFood={addFoodToDb} onDeleteFood={deleteFood} t={t}/>}
 {tab==="recipes"&&<RecipesTab db={db} recipes={recipes} onSaveRecipe={saveRecipe} onDeleteRecipe={deleteRecipe} onAddFood={addFoodToDb} t={t}/>}
 {tab==="calc"&&<CalcTab calcData={calcData} onSave={setCalcData} gymMeals={meals.gym} restMeals={meals.rest} gymMealRecs={mealRecs.gym||[]} restMealRecs={mealRecs.rest||[]} recipes={recipes} db={db} t={t}/>}
 </div>
