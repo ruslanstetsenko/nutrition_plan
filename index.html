@@ -958,15 +958,30 @@ const food=db[key]; const orig=ORIGINAL_DB[key];
 const isCustom=!orig, isModified=orig&&(food.p!==orig.p||food.f!==orig.f||food.c!==orig.c);
 const calPer100=macrosToCal(food.p,food.f,food.c);
 const displayName=food.displayName||getFoodName(key,t,db);
+const [editCat,setEditCat]=useState(false);
 return (
 <div key={key} style={{background:C.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${isCustom?C.purple+"44":isModified?C.amber+"44":C.border}`}}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-<div>
+<div style={{flex:1,minWidth:0}}>
 <div style={{fontSize:13,fontWeight:700,color:isCustom?C.purple:isModified?C.amber:C.text}}>
 {displayName}{food.label&&<span style={{fontSize:10,color:C.muted,marginLeft:5}}>({food.label})</span>}
 </div>
-<div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
-{food.cat&&<span style={{fontSize:10,color:C.teal,background:C.teal+"18",borderRadius:4,padding:"1px 6px"}}>{catLabels[food.cat]||food.cat}</span>}
+<div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+{!editCat
+  ? <span onClick={()=>setEditCat(true)} title={isUk?"Змінити категорію":"Change category"}
+      style={{fontSize:10,color:C.teal,background:C.teal+"18",borderRadius:4,padding:"2px 7px",cursor:"pointer",border:`1px solid ${C.teal}33`}}>
+      {food.cat?catLabels[food.cat]||food.cat:(isUk?"+ категорія":"+ category")}
+    </span>
+  : <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+      {Object.entries(catLabels).filter(([k])=>k!=="all").map(([k,l])=>(
+        <button key={k} onClick={()=>{ onUpdateFood(key,"cat",k); setEditCat(false); }}
+          style={{...btnStyle(food.cat===k?C.teal:C.muted,true),fontSize:10,padding:"2px 7px"}}>
+          {l}
+        </button>
+      ))}
+      <button onClick={()=>setEditCat(false)} style={{...btnStyle(C.muted,true),fontSize:10,padding:"2px 6px"}}>✕</button>
+    </div>
+}
 <span style={{fontSize:10,color:C.muted}}>{ft.perUnit(food.unit)}</span>
 </div>
 </div>
